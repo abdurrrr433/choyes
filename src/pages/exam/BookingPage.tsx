@@ -45,6 +45,7 @@ export default function BookingPage() {
   const [error, setError] = useState("");
   const [liveAvailableSeats, setLiveAvailableSeats] = useState<number | null>(null);
   const [loadingSeats, setLoadingSeats] = useState(false);
+  const [sessionDetail, setSessionDetail] = useState<any>(null);
   const [occupationSearch, setOccupationSearch] = useState("");
   const [isOccupationOpen, setIsOccupationOpen] = useState(false);
   const occupationRef = useRef<HTMLDivElement>(null);
@@ -313,11 +314,11 @@ export default function BookingPage() {
     if (codes[0]?.code || codes[0]?.language_code) setLanguageCode(String(codes[0].code || codes[0].language_code));
   }, [selectedSession]);
 
-  // Fetch live available_seats from exam_reservations API for the selected session
+  // Fetch session detail (status + seats) for the selected session
   useEffect(() => {
     let active = true;
     (async () => {
-      if (!sessionId) { setLiveAvailableSeats(null); setLoadingSeats(false); return; }
+      if (!sessionId) { setLiveAvailableSeats(null); setLoadingSeats(false); setSessionDetail(null); return; }
       setLoadingSeats(true);
       const findSeats = (payload: any): number | null => {
         const findInNode = (n: any): number | null => {
@@ -340,9 +341,13 @@ export default function BookingPage() {
       };
       try {
         let seats: number | null = null;
-        // Try plural endpoint first (more reliable)
+        // getExamSessionById equivalent — primary source of truth for status + seats
         try {
           const r0: any = await api(`/exam-sessions/${encodeURIComponent(sessionId)}?locale=en`);
+          if (active) {
+            const node = r0?.exam_session || r0?.data?.exam_session || r0?.data || r0;
+            setSessionDetail(node);
+          }
           seats = findSeats(r0);
         } catch {}
         if (seats == null) {
@@ -661,7 +666,8 @@ export default function BookingPage() {
           <div><span>City:</span> <strong>{siteCity || selectedCity || "-"}</strong></div>
           <div><span>Site ID:</span> <strong>{siteId || "-"}</strong></div>
           <div><span>Test Center:</span> <strong>{centerOptions.find((c) => String(c.siteId) === String(selectedCenterId))?.name || "-"}</strong></div>
-          <div><span>Exam Session ID:</span> <strong>{sessionId || "-"}</strong></div>
+          <div><span>Exam Session ID:</span> <strong>{sessionDetail?.id ? `#${sessionDetail.id}` : (sessionId ? `#${sessionId}` : "-")}</strong></div>
+          <div><span>Session Status:</span> <strong>{loadingSeats ? "Loading..." : (sessionDetail?.status || "-")}</strong></div>
           <div><span>Hold ID:</span> <strong>{holdId || "-"}</strong></div>
           <div><span>Booking No:</span> <strong>{reservationId || "-"}</strong></div>
         </div>
