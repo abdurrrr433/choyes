@@ -45,6 +45,7 @@ export default function BookingPage() {
   const [error, setError] = useState("");
   const [liveAvailableSeats, setLiveAvailableSeats] = useState<number | null>(null);
   const [loadingSeats, setLoadingSeats] = useState(false);
+  const [sessionDetail, setSessionDetail] = useState<any>(null);
   const [occupationSearch, setOccupationSearch] = useState("");
   const [isOccupationOpen, setIsOccupationOpen] = useState(false);
   const occupationRef = useRef<HTMLDivElement>(null);
