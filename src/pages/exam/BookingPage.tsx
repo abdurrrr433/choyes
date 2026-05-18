@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { api, getSession, getBackendUrl } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
+import { extractTestCenterId } from "@/lib/test-centers";
 import {
   pickArray, normalizeOccupation, normalizeDateValue,
   normalizeAvailableDateEntries, getSessionId, getSessionSiteId, getSessionSiteCity,
