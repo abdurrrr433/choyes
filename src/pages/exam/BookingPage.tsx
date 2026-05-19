@@ -305,14 +305,16 @@ export default function BookingPage() {
         });
       }
 
-      // 3. Final fallback: query local DB by city for sessions that have no usable
-      //    site_id / test_center_id (SVP often returns site_id=null). All sessions
-      //    sharing the same city resolve to the city's canonical test center name.
+      // 3. Final fallback: query local DB by city for ANY session whose name
+      //    still hasn't resolved — covers SVP responses where site_id is null
+      //    AND where test_center carries a random/unmapped id. All sessions
+      //    sharing the same city resolve to that city's canonical center name.
       const cityMissing = Array.from(new Set(
         sessions
           .filter((s: any) => {
             const key = String(getCenterKey(s));
-            return key && !newMap.has(key) && key.startsWith("city:");
+            const sessionKey = `session:${getSessionId(s)}`;
+            return !newMap.has(sessionKey) && (!key || !newMap.has(key));
           })
           .map((s: any) => String(getSessionSiteCity(s)).trim())
           .filter(Boolean)
@@ -326,10 +328,13 @@ export default function BookingPage() {
         });
         sessions.forEach((s: any) => {
           const key = String(getCenterKey(s));
-          if (!key || newMap.has(key) || !key.startsWith("city:")) return;
+          const sessionKey = `session:${getSessionId(s)}`;
+          if (newMap.has(sessionKey)) return;
           const c = String(getSessionSiteCity(s)).trim().toLowerCase();
           const name = byCity.get(c);
-          if (name) { newMap.set(key, name); changed = true; }
+          if (!name) return;
+          if (!newMap.has(sessionKey)) { newMap.set(sessionKey, name); changed = true; }
+          if (key && !newMap.has(key)) { newMap.set(key, name); changed = true; }
         });
       }
 
