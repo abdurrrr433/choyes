@@ -205,10 +205,61 @@ serve(async (req) => {
     if (path === "/test-centers" && req.method === "GET") {
       const { data, error } = await supabase
         .from("test_centers")
-        .select("site_id, name, city")
+        .select("site_id, name, city, country_code, address")
+        .order("city", { ascending: true })
         .order("name", { ascending: true });
       if (error) throw error;
       return new Response(JSON.stringify({ test_centers: data || [] }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // POST /test-centers — create or update (upsert by site_id)
+    if (path === "/test-centers" && req.method === "POST") {
+      const { siteId, name, city, countryCode, address } = await req.json();
+      const sid = Number(siteId);
+      if (!Number.isFinite(sid) || sid <= 0 || !name) {
+        return new Response(JSON.stringify({ message: "siteId (positive number) and name are required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data, error } = await supabase
+        .from("test_centers")
+        .upsert({
+          site_id: sid,
+          name,
+          city: city || null,
+          country_code: countryCode || null,
+          address: address || null,
+        }, { onConflict: "site_id" })
+        .select()
+        .single();
+      if (error) throw error;
+      return new Response(JSON.stringify({ message: "Test center saved", test_center: data }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // DELETE /test-centers/:site_id
+    const tcDelMatch = path.match(/^\/test-centers\/([^/]+)$/);
+    if (tcDelMatch && req.method === "DELETE") {
+      const sid = Number(tcDelMatch[1]);
+      if (!Number.isFinite(sid)) {
+        return new Response(JSON.stringify({ message: "Invalid site_id" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Block deletion if any session is mapped to it
+      const { count } = await supabase
+        .from("exam_session_centers").select("exam_session_id", { count: "exact", head: true }).eq("site_id", sid);
+      if ((count || 0) > 0) {
+        return new Response(JSON.stringify({ message: `Cannot delete: ${count} session mapping(s) still use this center` }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { error } = await supabase.from("test_centers").delete().eq("site_id", sid);
+      if (error) throw error;
+      return new Response(JSON.stringify({ message: "Test center deleted" }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

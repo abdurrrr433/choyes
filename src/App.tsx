@@ -19,6 +19,7 @@ import AccessAccountsPage from "@/pages/access/AccessAccountsPage";
 import AccessUsersPage from "@/pages/access/AccessUsersPage";
 import AccessAgenciesPage from "@/pages/access/AccessAgenciesPage";
 import AccessSessionCentersPage from "@/pages/access/AccessSessionCentersPage";
+import AccessTestCentersPage from "@/pages/access/AccessTestCentersPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,6 +50,7 @@ const App = () => (
               <Route path="/access/users" element={<AccessProtectedRoute allowedRoles={["ADMIN", "AGENCY"]}><AccessUsersPage /></AccessProtectedRoute>} />
               <Route path="/access/agencies" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessAgenciesPage /></AccessProtectedRoute>} />
               <Route path="/access/session-centers" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessSessionCentersPage /></AccessProtectedRoute>} />
+              <Route path="/access/test-centers" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessTestCentersPage /></AccessProtectedRoute>} />
 
               <Route path="*" element={<NotFound />} />
             </Routes>
