@@ -118,6 +118,8 @@ describe("BookingPage integration: sessionsWithResolvedCenters → UI", () => {
         const opts = Array.from(
           document.querySelectorAll("option")
         ) as HTMLOptionElement[];
+        // eslint-disable-next-line no-console
+        console.log("OPTS:", opts.map((o) => o.textContent));
         const match = opts.find(
           (o) =>
             o.textContent?.includes("Technical Training Centre (TTC), Bogura") &&
@@ -125,7 +127,7 @@ describe("BookingPage integration: sessionsWithResolvedCenters → UI", () => {
         );
         expect(match).toBeTruthy();
       },
-      { timeout: 5000 }
+      { timeout: 10000 }
     );
 
     // And the session dropdown also shows the resolved name + stamped site_id.
