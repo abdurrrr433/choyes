@@ -6,7 +6,7 @@ import { extractTestCenterId } from "@/lib/test-centers";
 import {
   pickArray, normalizeOccupation, normalizeDateValue,
   normalizeAvailableDateEntries, getSessionId, getSessionSiteId, getSessionSiteCity,
-  getSessionCenterName, getCenterKey, getPrometricCodes, extractId,
+  getSessionCenterName, getExplicitSessionCenterName, getCenterKey, getPrometricCodes, extractId,
   buildCenterOptions, buildCityOptions, buildDateOptions, buildCalendarDays,
   formatDateLabel, detectBookingMode,
 } from "@/lib/booking-utils";
@@ -65,17 +65,33 @@ export default function BookingPage() {
     () => selectedCity ? sessions.filter((item) => String(getSessionSiteCity(item)).trim().toLowerCase() === String(selectedCity).trim().toLowerCase()) : sessions,
     [sessions, selectedCity]
   );
+  const sessionsWithResolvedCenters = useMemo(
+    () => cityFilteredSessions.map((item) => {
+      const realName = testCenterMap.get(`session:${getSessionId(item)}`);
+      if (!realName || getExplicitSessionCenterName(item)) return item;
+      return { ...item, test_center: { ...(item?.test_center || {}), name: realName } };
+    }),
+    [cityFilteredSessions, testCenterMap]
+  );
   const centerOptions = useMemo(() => {
-    const options = buildCenterOptions(cityFilteredSessions);
+    const options = buildCenterOptions(sessionsWithResolvedCenters);
     // Enrich with real test center names from the map
     return options.map((opt) => ({
       ...opt,
       name: testCenterMap.get(opt.siteId) || opt.name,
     }));
-  }, [cityFilteredSessions, testCenterMap]);
+  }, [sessionsWithResolvedCenters, testCenterMap]);
+  const getResolvedSessionCenterName = (item: any) => {
+    const candidates = [`session:${getSessionId(item)}`, String(getCenterKey(item)), String(getSessionSiteId(item))].filter(Boolean);
+    for (const key of candidates) {
+      const mapped = testCenterMap.get(key);
+      if (mapped) return mapped;
+    }
+    return getSessionCenterName(item);
+  };
   const filteredSessions = useMemo(
-    () => selectedCenterId ? cityFilteredSessions.filter((item) => getCenterKey(item) === String(selectedCenterId)) : cityFilteredSessions,
-    [cityFilteredSessions, selectedCenterId]
+    () => selectedCenterId ? sessionsWithResolvedCenters.filter((item) => getCenterKey(item) === String(selectedCenterId)) : sessionsWithResolvedCenters,
+    [sessionsWithResolvedCenters, selectedCenterId]
   );
   const selectedSession = useMemo(
     () => filteredSessions.find((item) => String(getSessionId(item)) === String(sessionId)) || null,
@@ -235,11 +251,11 @@ export default function BookingPage() {
       const newMap = new Map(testCenterMap);
       let changed = false;
 
-      // 1. For sessions missing test_center.name, fetch /exam-sessions/:id to get it.
+      // 1. Fetch /exam-sessions/:id and map the real test_center.name per exam_session_id.
       const needDetail = sessions.filter((s: any) => {
         const key = String(getCenterKey(s));
         if (!key || newMap.has(key)) return false;
-        return !s?.test_center?.name && !s?.test_center_name;
+        return true;
       });
       const uniqueIds = Array.from(new Set(needDetail.map((s: any) => String(getSessionId(s))).filter(Boolean)));
       await Promise.all(uniqueIds.map(async (id) => {
@@ -250,8 +266,12 @@ export default function BookingPage() {
           const name = tc?.name || tc?.test_center_name || node?.test_center_name;
           if (!name) return;
           const sess = sessions.find((s: any) => String(getSessionId(s)) === id);
-          const key = String(getCenterKey({ ...sess, test_center: { ...sess?.test_center, ...tc } }));
+          const sessionKey = `session:${id}`;
+          if (!newMap.has(sessionKey)) { newMap.set(sessionKey, name); changed = true; }
+          const key = String(getCenterKey(sess));
           if (key && !newMap.has(key)) { newMap.set(key, name); changed = true; }
+          const detailKey = String(getCenterKey({ ...sess, ...node, test_center: { ...sess?.test_center, ...tc } }));
+          if (detailKey && !newMap.has(detailKey)) { newMap.set(detailKey, name); changed = true; }
         } catch {}
       }));
 
@@ -666,7 +686,7 @@ export default function BookingPage() {
               <option value="">{loadingSessions ? "Loading sessions..." : "Select session"}</option>
               {filteredSessions.map((item) => {
                 const sid = getSessionSiteId(item);
-                const realName = testCenterMap.get(String(sid)) || getSessionCenterName(item);
+                const realName = getResolvedSessionCenterName(item);
                 const seats = item?.available_seats ?? item?.seats_available ?? item?.remaining_seats ?? null;
                 return (
                   <option key={getSessionId(item)} value={getSessionId(item)}>
@@ -697,7 +717,7 @@ export default function BookingPage() {
           <div><span>Test Center ID:</span> <strong>{
             extractTestCenterId(selectedSession) || extractTestCenterId(sessionDetail) || siteId || "-"
           }</strong></div>
-          <div><span>Test Center:</span> <strong>{centerOptions.find((c) => String(c.siteId) === String(selectedCenterId))?.name || "-"}</strong></div>
+          <div><span>Test Center:</span> <strong>{selectedSession ? getResolvedSessionCenterName(selectedSession) : (centerOptions.find((c) => String(c.siteId) === String(selectedCenterId))?.name || "-")}</strong></div>
           <div><span>Exam Session ID:</span> <strong>{sessionDetail?.id ? `#${sessionDetail.id}` : (sessionId ? `#${sessionId}` : "-")}</strong></div>
           <div><span>Session Status:</span> <strong>{loadingSeats ? "Loading..." : (sessionDetail?.status || "-")}</strong></div>
           <div><span>Hold ID:</span> <strong>{holdId || "-"}</strong></div>

@@ -87,16 +87,22 @@ export function getSessionSiteCity(item: any): string {
 
 export function getSessionCenterName(item: any): string {
   return String(
-    item?.test_center_name || item?.test_center?.name || item?.test_center?.test_center_name ||
+    getExplicitSessionCenterName(item) ||
     `${getSessionSiteCity(item) || "Center"}${getSessionSiteId(item) ? ` (#${getSessionSiteId(item)})` : ""}`
   );
+}
+
+export function getExplicitSessionCenterName(item: any): string {
+  return String(item?.test_center_name || item?.test_center?.name || item?.test_center?.test_center_name || "").trim();
 }
 
 export function getCenterKey(item: any): string {
   const sid = getSessionSiteId(item);
   if (sid) return String(sid);
+  const explicitName = getExplicitSessionCenterName(item);
+  if (explicitName) return `name:${String(getSessionSiteCity(item)).trim().toLowerCase()}:${explicitName.toLowerCase()}`;
   // When SVP returns sessions with site_id=null and no test_center_id,
-  // group them by city so all sessions in the same city share one test-center row.
+  // and no real center name yet, group them by city until detail fetch fills it.
   const city = getSessionSiteCity(item);
   if (city) return `city:${String(city).trim().toLowerCase()}`;
   return String(getSessionId(item) || "");
