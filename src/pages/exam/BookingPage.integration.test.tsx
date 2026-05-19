@@ -115,13 +115,14 @@ describe("BookingPage integration: sessionsWithResolvedCenters → UI", () => {
     );
 
     // Wait for the center dropdown to display the resolved name + site_id.
+    await new Promise((r) => setTimeout(r, 200));
+    // eslint-disable-next-line no-console
+    console.log("BODY:", document.body.innerHTML.slice(0, 3000));
     await waitFor(
       () => {
         const opts = Array.from(
           document.querySelectorAll("option")
         ) as HTMLOptionElement[];
-        // eslint-disable-next-line no-console
-        console.log("OPTS:", opts.map((o) => o.textContent));
         const match = opts.find(
           (o) =>
             o.textContent?.includes("Technical Training Centre (TTC), Bogura") &&
