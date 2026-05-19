@@ -52,6 +52,7 @@ const App = () => (
               <Route path="/access/agencies" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessAgenciesPage /></AccessProtectedRoute>} />
               <Route path="/access/session-centers" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessSessionCentersPage /></AccessProtectedRoute>} />
               <Route path="/access/test-centers" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessTestCentersPage /></AccessProtectedRoute>} />
+              <Route path="/access/section-rules" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessSectionRulesPage /></AccessProtectedRoute>} />
 
               <Route path="*" element={<NotFound />} />
             </Routes>
