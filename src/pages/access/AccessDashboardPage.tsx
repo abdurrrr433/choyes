@@ -64,6 +64,14 @@ export default function AccessDashboardPage() {
               Session Centers
             </Link>
           )}
+          {isAdmin && (
+            <Link
+              className={`nav-item ${location.pathname === "/access/section-rules" ? "nav-item--active" : ""}`}
+              to="/access/section-rules"
+            >
+              Section Rules
+            </Link>
+          )}
         </nav>
       </aside>
 

@@ -127,6 +127,42 @@ export type Database = {
         }
         Relationships: []
       }
+      section_center_rules: {
+        Row: {
+          category_id: string | null
+          city: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          priority: number
+          section: string | null
+          site_id: number
+          updated_at: string
+        }
+        Insert: {
+          category_id?: string | null
+          city?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          priority?: number
+          section?: string | null
+          site_id: number
+          updated_at?: string
+        }
+        Update: {
+          category_id?: string | null
+          city?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          priority?: number
+          section?: string | null
+          site_id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       svp_sessions: {
         Row: {
           created_at: string

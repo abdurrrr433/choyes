@@ -8,7 +8,7 @@ import {
   normalizeAvailableDateEntries, getSessionId, getSessionSiteId, getSessionSiteCity,
   getSessionCenterName, getExplicitSessionCenterName, getCenterKey, getPrometricCodes, extractId,
   buildCenterOptions, buildCityOptions, buildDateOptions, buildCalendarDays,
-  formatDateLabel, detectBookingMode, resolveSessionCenter,
+  formatDateLabel, detectBookingMode, resolveSessionCenter, SectionCenterRule,
 } from "@/lib/booking-utils";
 
 
@@ -25,6 +25,8 @@ export default function BookingPage() {
   const [centerNameToSiteId, setCenterNameToSiteId] = useState<Map<string, string>>(new Map());
   // exam_session_id -> site_id (admin-defined deterministic mapping via Lovable Cloud).
   const [sessionIdToSiteId, setSessionIdToSiteId] = useState<Map<string, string>>(new Map());
+  // Section rules — deterministic fallback for sessions whose site_id changes daily.
+  const [sectionRules, setSectionRules] = useState<SectionCenterRule[]>([]);
   const [selectedOccupationId, setSelectedOccupationId] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [availableDate, setAvailableDate] = useState("");
@@ -71,8 +73,8 @@ export default function BookingPage() {
     [sessions, selectedCity]
   );
   const sessionsWithResolvedCenters = useMemo(
-    () => cityFilteredSessions.map((item) => resolveSessionCenter(item, testCenterMap, centerNameToSiteId, sessionIdToSiteId)),
-    [cityFilteredSessions, testCenterMap, centerNameToSiteId, sessionIdToSiteId]
+    () => cityFilteredSessions.map((item) => resolveSessionCenter(item, testCenterMap, centerNameToSiteId, sessionIdToSiteId, sectionRules)),
+    [cityFilteredSessions, testCenterMap, centerNameToSiteId, sessionIdToSiteId, sectionRules]
   );
   const centerOptions = useMemo(() => {
     const options = buildCenterOptions(sessionsWithResolvedCenters);
@@ -287,6 +289,42 @@ export default function BookingPage() {
     })();
     return () => { active = false; };
   }, [sessions]);
+
+  // Load all section center rules once. Also pre-load test_centers names for rule sites.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data: rules } = await supabase
+        .from("section_center_rules")
+        .select("id, city, category_id, section, site_id, priority");
+      if (!active || !rules) return;
+      setSectionRules(rules as SectionCenterRule[]);
+      const siteIds = Array.from(new Set(rules.map((r: any) => Number(r.site_id)).filter((n) => Number.isFinite(n))));
+      if (!siteIds.length) return;
+      const { data: centers } = await supabase
+        .from("test_centers").select("site_id, name").in("site_id", siteIds);
+      if (!active || !centers) return;
+      setTestCenterMap((prev) => {
+        const next = new Map(prev);
+        let changed = false;
+        centers.forEach((row: any) => {
+          const k = `site:${row.site_id}`;
+          if (next.get(k) !== row.name) { next.set(k, row.name); changed = true; }
+        });
+        return changed ? next : prev;
+      });
+      setCenterNameToSiteId((prev) => {
+        const next = new Map(prev);
+        let changed = false;
+        centers.forEach((row: any) => {
+          const k = String(row.name || "").trim().toLowerCase();
+          if (k && next.get(k) !== String(row.site_id)) { next.set(k, String(row.site_id)); changed = true; }
+        });
+        return changed ? next : prev;
+      });
+    })();
+    return () => { active = false; };
+  }, []);
 
   // Resolve real test center names: prefer SVP exam_session detail (test_center.name),
   // fall back to local DB by site_id. Key map by the same key buildCenterOptions uses.

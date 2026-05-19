@@ -328,6 +328,92 @@ serve(async (req) => {
       });
     }
 
+    // GET /section-rules — list rules with their center name
+    if (path === "/section-rules" && req.method === "GET") {
+      const { data, error } = await supabase
+        .from("section_center_rules")
+        .select("id, city, category_id, section, site_id, priority, notes, created_at, updated_at, test_centers!inner(name, city)")
+        .order("priority", { ascending: false })
+        .order("updated_at", { ascending: false });
+      // Fallback if no implicit FK relationship: query separately
+      if (error) {
+        const { data: rules, error: e2 } = await supabase
+          .from("section_center_rules")
+          .select("*")
+          .order("priority", { ascending: false })
+          .order("updated_at", { ascending: false });
+        if (e2) throw e2;
+        const siteIds = Array.from(new Set((rules || []).map((r: any) => r.site_id)));
+        const { data: centers } = siteIds.length
+          ? await supabase.from("test_centers").select("site_id, name, city").in("site_id", siteIds)
+          : { data: [] as any[] };
+        const map = new Map((centers || []).map((c: any) => [c.site_id, c]));
+        const rows = (rules || []).map((r: any) => ({
+          ...r, center_name: map.get(r.site_id)?.name || null, center_city: map.get(r.site_id)?.city || null,
+        }));
+        return new Response(JSON.stringify({ rules: rows }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const rows = (data || []).map((r: any) => ({
+        id: r.id, city: r.city, category_id: r.category_id, section: r.section,
+        site_id: r.site_id, priority: r.priority, notes: r.notes,
+        center_name: r.test_centers?.name || null, center_city: r.test_centers?.city || null,
+        created_at: r.created_at, updated_at: r.updated_at,
+      }));
+      return new Response(JSON.stringify({ rules: rows }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // POST /section-rules — create or update
+    if (path === "/section-rules" && req.method === "POST") {
+      const { id, city, categoryId, section, siteId, priority, notes } = await req.json();
+      const sid = Number(siteId);
+      if (!Number.isFinite(sid) || sid <= 0) {
+        return new Response(JSON.stringify({ message: "siteId is required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!city && !categoryId && !section) {
+        return new Response(JSON.stringify({ message: "At least one of city, categoryId, or section must be set" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: tc } = await supabase.from("test_centers").select("site_id").eq("site_id", sid).single();
+      if (!tc) {
+        return new Response(JSON.stringify({ message: "Unknown site_id" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const payload: any = {
+        city: city?.trim() || null,
+        category_id: categoryId?.toString().trim() || null,
+        section: section?.trim() || null,
+        site_id: sid,
+        priority: Number.isFinite(Number(priority)) ? Number(priority) : 0,
+        notes: notes || null,
+      };
+      const q = id
+        ? supabase.from("section_center_rules").update(payload).eq("id", id).select().single()
+        : supabase.from("section_center_rules").insert(payload).select().single();
+      const { data, error } = await q;
+      if (error) throw error;
+      return new Response(JSON.stringify({ message: "Rule saved", rule: data }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // DELETE /section-rules/:id
+    const srDelMatch = path.match(/^\/section-rules\/([^/]+)$/);
+    if (srDelMatch && req.method === "DELETE") {
+      const { error } = await supabase.from("section_center_rules").delete().eq("id", srDelMatch[1]);
+      if (error) throw error;
+      return new Response(JSON.stringify({ message: "Rule deleted" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ message: "Not found" }), {
       status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
