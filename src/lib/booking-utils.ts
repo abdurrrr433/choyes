@@ -93,7 +93,13 @@ export function getSessionCenterName(item: any): string {
 }
 
 export function getCenterKey(item: any): string {
-  return String(getSessionSiteId(item) || getSessionId(item) || "");
+  const sid = getSessionSiteId(item);
+  if (sid) return String(sid);
+  // When SVP returns sessions with site_id=null and no test_center_id,
+  // group them by city so all sessions in the same city share one test-center row.
+  const city = getSessionSiteCity(item);
+  if (city) return `city:${String(city).trim().toLowerCase()}`;
+  return String(getSessionId(item) || "");
 }
 
 export function getPrometricCodes(item: any): any[] {
