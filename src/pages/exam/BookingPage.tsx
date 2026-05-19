@@ -8,7 +8,7 @@ import {
   normalizeAvailableDateEntries, getSessionId, getSessionSiteId, getSessionSiteCity,
   getSessionCenterName, getExplicitSessionCenterName, getCenterKey, getPrometricCodes, extractId,
   buildCenterOptions, buildCityOptions, buildDateOptions, buildCalendarDays,
-  formatDateLabel, detectBookingMode, resolveSessionCenter,
+  formatDateLabel, detectBookingMode, resolveSessionCenter, SectionCenterRule,
 } from "@/lib/booking-utils";
 
 
