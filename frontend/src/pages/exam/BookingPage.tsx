@@ -85,6 +85,11 @@ export default function BookingPage() {
     }));
   }, [sessionsWithResolvedCenters, testCenterMap]);
   const getResolvedSessionCenterName = (item: any) => {
+    // SVP-first: if the session already carries its own real test_center_name
+    // (new SVP shape), use that. This guarantees per-session correctness even
+    // when multiple sessions in the same city belong to different test centers.
+    const explicit = getExplicitSessionCenterName(item);
+    if (explicit) return explicit;
     const candidates = [`session:${getSessionId(item)}`, String(getCenterKey(item)), String(getSessionSiteId(item))].filter(Boolean);
     for (const key of candidates) {
       const mapped = testCenterMap.get(key);

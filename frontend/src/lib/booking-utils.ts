@@ -149,7 +149,13 @@ export function findMatchingSectionRule(item: any, rules: SectionCenterRule[]): 
 
 /**
  * Resolves the test center name and site_id for a session, stamping them onto the session.
- * Site_id priority:
+ *
+ * Priority (UPDATED):
+ *   0. If SVP returned an explicit test_center_name AND a test_center_id (the new
+ *      SVP shape: `test_center.test_center_name` + `test_center.test_center_id`),
+ *      ALWAYS trust SVP. Each exam_session keeps its own real center identity.
+ *      This is critical when one city has multiple test centers — admin overrides
+ *      / section rules would otherwise collapse them all to the same name.
  *   1. `sessionIdToSiteId` admin exact mapping (exam_session_id -> site_id)
  *   2. Section rule (city + category + section)
  *   3. Existing `site_id` already on the session (from SVP)
@@ -163,20 +169,33 @@ export function resolveSessionCenter(
   sectionRules?: SectionCenterRule[]
 ): any {
   const sessionId = getSessionId(item);
-  const adminSiteId = sessionIdToSiteId?.get(String(sessionId)) || "";
-  const ruleMatch = !adminSiteId && sectionRules?.length ? findMatchingSectionRule(item, sectionRules) : null;
-  const ruleSiteId = ruleMatch ? String(ruleMatch.site_id) : "";
   const explicit = getExplicitSessionCenterName(item);
+  const explicitSiteId = getSessionSiteId(item);
+  const svpAuthoritative = !!explicit && !!explicitSiteId;
+
+  const adminSiteId = sessionIdToSiteId?.get(String(sessionId)) || "";
+  const ruleMatch =
+    !svpAuthoritative && !adminSiteId && sectionRules?.length
+      ? findMatchingSectionRule(item, sectionRules)
+      : null;
+  const ruleSiteId = ruleMatch ? String(ruleMatch.site_id) : "";
   const mappedName = testCenterMap.get(`session:${sessionId}`);
   const adminName = adminSiteId ? testCenterMap.get(`site:${adminSiteId}`) : "";
   const ruleName = ruleSiteId ? testCenterMap.get(`site:${ruleSiteId}`) : "";
-  const resolvedName = adminName || ruleName || explicit || mappedName || "";
-  const resolvedSiteId =
-    adminSiteId ||
-    ruleSiteId ||
-    getSessionSiteId(item) ||
-    (resolvedName ? centerNameToSiteId.get(resolvedName.trim().toLowerCase()) : "") ||
-    "";
+
+  // SVP-first: if SVP has a real name+id pair, use that (no admin/rule override).
+  // Otherwise fall back to the legacy resolution chain.
+  const resolvedName = svpAuthoritative
+    ? explicit
+    : (adminName || ruleName || explicit || mappedName || "");
+  const resolvedSiteId = svpAuthoritative
+    ? explicitSiteId
+    : (adminSiteId ||
+        ruleSiteId ||
+        explicitSiteId ||
+        (resolvedName ? centerNameToSiteId.get(resolvedName.trim().toLowerCase()) : "") ||
+        "");
+
   if (!resolvedName && !resolvedSiteId) return item;
   return {
     ...item,

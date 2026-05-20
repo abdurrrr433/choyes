@@ -165,6 +165,47 @@ frontend:
               - Frontend supervisor is now RUNNING.
 
             svp-proxy / edge-function setup left untouched (per user instruction).
+        - working: false
+          agent: "user"
+          comment: |
+            "exam_session অনুযায়ী সঠিক test_center name show করে না বুকিং পেজে কারন প্রতিটা
+             টেস্ট সেন্টার জন্য আলাদা id আছে... যেকোনো সেশন আলাদা আলাদা হক কিন্তু যেটা
+             available আছে অই অই সেশন test center name show করবে"
+            i.e. multiple sessions in the same city belong to different test centers but
+            the booking page collapses them to one wrong name.
+        - working: true
+          agent: "main"
+          comment: |
+            Second-level root cause: resolveSessionCenter priority was:
+                resolvedName = adminName || ruleName || explicit || mappedName || ""
+            So any admin override (exam_session_centers) or section_center_rules row
+            for the city would MASK the real per-session test_center_name that SVP now
+            returns. Result: multiple sessions in one city, with different real
+            test_center_ids, all rendered the same (wrong) center name.
+
+            Fix: SVP-first priority. When SVP gives BOTH test_center.test_center_name
+            AND test_center.test_center_id (the new shape), trust it. Admin overrides /
+            section rules only apply for legacy SVP responses (no name + no id), keeping
+            backwards compatibility for old data.
+
+            Files:
+              - /app/frontend/src/lib/booking-utils.ts (resolveSessionCenter)
+              - /app/frontend/src/pages/exam/BookingPage.tsx (getResolvedSessionCenterName)
+
+            Verification:
+              - Added booking-svp-first-priority.test.ts (6 tests):
+                  * admin override no longer masks SVP name when SVP has name+id
+                  * section rule no longer masks SVP name when SVP has name+id
+                  * two sessions in same city with different test_center_ids resolve to
+                    DIFFERENT names + DIFFERENT site_ids (the exact user-reported bug)
+                  * legacy session (no name, no id) STILL uses admin override
+                  * legacy session STILL uses section rule
+                  * session with name but NO id falls back to admin override (correct)
+              - All 41 tests pass (14 new + 27 existing).
+              - tsc --noEmit clean. Frontend RUNNING.
+
+            Also fixed Vite "host not allowed" error for the preview domain:
+              - vite.config.ts now sets `server.allowedHosts: true`.
 
 metadata:
   created_by: "main_agent"
