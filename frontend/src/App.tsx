@@ -21,6 +21,7 @@ import AccessAgenciesPage from "@/pages/access/AccessAgenciesPage";
 import AccessSessionCentersPage from "@/pages/access/AccessSessionCentersPage";
 import AccessTestCentersPage from "@/pages/access/AccessTestCentersPage";
 import AccessSectionRulesPage from "@/pages/access/AccessSectionRulesPage";
+import TestCenterDetailPage from "@/pages/exam/TestCenterDetailPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +43,7 @@ const App = () => (
               <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
               <Route path="/exam/booking" element={<ProtectedRoute><BookingPage /></ProtectedRoute>} />
               <Route path="/exam/reservations" element={<ProtectedRoute><ReservationsPage /></ProtectedRoute>} />
+              <Route path="/exam/test-centers/:id" element={<ProtectedRoute><TestCenterDetailPage /></ProtectedRoute>} />
 
               {/* Access Control System */}
               <Route path="/access/login" element={<AccessLoginPage />} />
