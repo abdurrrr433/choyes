@@ -59,7 +59,8 @@ export async function apiAuth<T = any>(
   return data as T;
 }
 
-export async function api<T = any>(
+async function callFunction<T = any>(
+  functionName: string,
   path: string,
   { method = "GET", body, token }: { method?: string; body?: any; token?: string } = {}
 ): Promise<T> {
@@ -80,7 +81,7 @@ export async function api<T = any>(
     return status === 401 || (status === 500 && message.includes("token expired"));
   };
 
-  let { res, data } = await doFetch(`${BASE}/svp-proxy${path}`, makeOpts(access));
+  let { res, data } = await doFetch(`${BASE}/${functionName}${path}`, makeOpts(access));
 
   if (shouldRefresh(res.status, data) && session.refreshToken && session.sessionId) {
     try {
@@ -93,7 +94,7 @@ export async function api<T = any>(
       if (refreshRes.res.ok && refreshRes.data?.accessToken) {
         access = refreshRes.data.accessToken;
         localStorage.setItem("accessToken", access);
-        ({ res, data } = await doFetch(`${BASE}/svp-proxy${path}`, makeOpts(access)));
+        ({ res, data } = await doFetch(`${BASE}/${functionName}${path}`, makeOpts(access)));
       } else if (refreshRes.res.status === 401) {
         clearSession();
       }
@@ -108,6 +109,23 @@ export async function api<T = any>(
   }
 
   return data as T;
+}
+
+export async function api<T = any>(
+  path: string,
+  opts: { method?: string; body?: any; token?: string } = {}
+): Promise<T> {
+  return callFunction<T>("svp-proxy", path, opts);
+}
+
+// Real calls to the test-center-owner edge function (validate_access, owner-status,
+// test center detail) — backed by the public.test_center_owners table, using the
+// same SVP session/JWT auth as the rest of the app. See supabase/functions/test-center-owner.
+export async function apiTestCenter<T = any>(
+  path: string,
+  opts: { method?: string; body?: any; token?: string } = {}
+): Promise<T> {
+  return callFunction<T>("test-center-owner", path, opts);
 }
 
 export { saveSession, clearSession, getSession };

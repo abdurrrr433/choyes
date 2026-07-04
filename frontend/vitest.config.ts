@@ -8,7 +8,10 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // Only *.test.ts(x) belong to Vitest. *.spec.ts(x) is reserved for Playwright
+    // E2E specs (see playwright.config.ts testMatch) and must not be collected here,
+    // or Vitest tries to run Playwright's test.describe() and crashes.
+    include: ["src/**/*.test.{ts,tsx}"],
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
