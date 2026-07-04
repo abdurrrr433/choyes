@@ -1,0 +1,54 @@
+[2026-07-04T15:47:31.601Z] [DebugLogger] Debug logging enabled
+  {
+    "logFile": "c:\\Users\\Smart View\\Desktop\\svp-server\\svp\\choyes\\choyes\\debug_log.txt",
+    "backupFile": "c:\\Users\\Smart View\\Desktop\\svp-server\\svp\\choyes\\choyes\\debug_log.bak"
+  }
+
+[2026-07-04T15:47:31.602Z] [Extension] Extension activating...
+  {
+    "workspacePath": "c:\\Users\\Smart View\\Desktop\\svp-server\\svp\\choyes\\choyes",
+    "debugMaxLines": 500
+  }
+
+[2026-07-04T15:47:31.623Z] [SecretService] Initialized successfully
+
+[2026-07-04T15:47:31.625Z] [npmFinder] Starting to find npm executable...
+
+[2026-07-04T15:47:41.845Z] [npmFinder:ERROR] Could not find npm in any known location
+  {}
+
+[2026-07-04T15:47:41.850Z] [npmFinder:ERROR] Could not find npm executable
+  {}
+
+[2026-07-04T15:47:42.154Z] [PluginManager] Loading plugins from file
+
+[2026-07-04T15:47:42.163Z] [PluginManager:WARN] Plugin config file not found: C:\Users\Smart View\.claude\plugins\installed_plugins.json
+
+[2026-07-04T15:47:42.164Z] [HooksConfigManager] Workspace path set to: c:\Users\Smart View\Desktop\svp-server\svp\choyes\choyes
+
+[2026-07-04T15:47:42.166Z] [npmFinder] Starting to find npm executable...
+
+[2026-07-04T15:47:42.240Z] [BackupManager] Workspace storage path: c:\Users\Smart View\AppData\Roaming\Code\User\workspaceStorage\1d244048055a4b002639dde050a7086b\lkbaba.claude-code-chatui
+
+[2026-07-04T15:47:42.240Z] [BackupManager] Backup repo path: c:\Users\Smart View\AppData\Roaming\Code\User\workspaceStorage\1d244048055a4b002639dde050a7086b\lkbaba.claude-code-chatui\backups\.git
+
+[2026-07-04T15:47:47.615Z] [npmFinder:ERROR] Could not find npm in any known location
+  {}
+
+[2026-07-04T15:47:47.616Z] [npmFinder:ERROR] Could not find npm executable
+  {}
+
+[2026-07-04T15:47:47.618Z] [utils:ERROR] Could not get npm prefix
+  {}
+
+[2026-07-04T15:47:48.092Z] [BackupManager] Creating new backup repository...
+
+[2026-07-04T15:48:00.982Z] [BackupManager] Created backups directory: c:\Users\Smart View\AppData\Roaming\Code\User\workspaceStorage\1d244048055a4b002639dde050a7086b\lkbaba.claude-code-chatui\backups
+
+[2026-07-04T15:48:12.997Z] [BackupManager] Created .git directory: c:\Users\Smart View\AppData\Roaming\Code\User\workspaceStorage\1d244048055a4b002639dde050a7086b\lkbaba.claude-code-chatui\backups\.git
+
+[2026-07-04T15:48:12.998Z] [BackupManager] Workspace path: c:\Users\Smart View\Desktop\svp-server\svp\choyes\choyes
+
+[2026-07-04T15:48:12.998Z] [BackupManager] Running init command: git --git-dir="c:\Users\Smart View\AppData\Roaming\Code\User\workspaceStorage\1d244048055a4b002639dde050a7086b\lkbaba.claude-code-chatui\backups\.git" --work-tree="c:\Users\Smart View\Desktop\svp-server\svp\choyes\choyes" init
+
+[2026-07-04T15:48:22.006Z] [BackupManager] Initialized backup repository at: c:\Users\Smart View\AppData\Roaming\Code\User\workspaceStorage\1d244048055a4b002639dde050a7086b\lkbaba.claude-code-chatui\backups\.git
