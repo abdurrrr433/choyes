@@ -45,6 +45,18 @@ describe("BookingPage createHold — single-session hold (SVP wrong center fix)"
     expect(buildHoldSessionIds(-1)).toEqual([]);
   });
 
+  it("extracts nested live SVP exam_session ids for hold creation", () => {
+    const selectedSession = {
+      exam_session: {
+        id: 1554447,
+        test_center: { test_center_id: 54, test_center_city: "Rajshahi" },
+      },
+    };
+
+    expect(getSessionId(selectedSession)).toBe("1554447");
+    expect(buildHoldSessionIds(getSessionId(selectedSession))).toEqual([1554447]);
+  });
+
   it("documents the buggy behavior so the regression is locked in", () => {
     // Simulate two Dhaka centers exposed in the filteredSessions list.
     const filteredSessions = [

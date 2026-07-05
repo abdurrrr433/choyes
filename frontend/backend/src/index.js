@@ -44,18 +44,26 @@ const hardcodedOrigins = [
   'https://svp-book-abdur-razzak-s-projects.vercel.app',
   'https://aci-root.vercel.app',
 ];
-const origins = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+function normalizeOrigin(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+const origins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(normalizeOrigin)
+  .filter(Boolean);
 const allOrigins = [...new Set([...hardcodedOrigins, ...origins])];
 const vercelProject = (process.env.VERCEL_PROJECT_SLUG || '').trim().toLowerCase();
 
 function isAllowedOrigin(origin) {
   if (!origin) return true;
-  if (allOrigins.includes(origin)) return true;
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (allOrigins.includes(normalizedOrigin)) return true;
 
   // Allow Vercel preview deployments for this project without listing each random URL.
   if (vercelProject) {
     try {
-      const { hostname, protocol } = new URL(origin);
+      const { hostname, protocol } = new URL(normalizedOrigin);
       if (protocol === 'https:' && hostname.endsWith('.vercel.app') && hostname.includes(`-${vercelProject}-`)) {
         return true;
       }
@@ -66,7 +74,7 @@ function isAllowedOrigin(origin) {
 
   // Allow Lovable preview/published domains automatically
   try {
-    const { hostname, protocol } = new URL(origin);
+    const { hostname, protocol } = new URL(normalizedOrigin);
     if (protocol === 'https:' &&
         (hostname.endsWith('.lovable.app') || hostname.endsWith('.lovableproject.com'))) {
       return true;
@@ -79,7 +87,10 @@ function isAllowedOrigin(origin) {
 }
 
 app.use(cors({
-  origin: true,
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) return callback(null, true);
+    return callback(new Error(`Origin not allowed by CORS: ${origin}`));
+  },
   credentials: true,
 }));
 

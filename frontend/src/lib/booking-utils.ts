@@ -62,7 +62,17 @@ export function normalizeOccupation(item: any): NormalizedOccupation {
 }
 
 export function getSessionId(item: any): string {
-  return String(item?.id || item?.session_id || item?.exam_session_id || "");
+  return String(
+    item?.id ||
+    item?.session_id ||
+    item?.exam_session_id ||
+    item?.examSessionId ||
+    item?.exam_session?.id ||
+    item?.exam_session?.session_id ||
+    item?.exam_session?.exam_session_id ||
+    item?.data?.exam_session?.id ||
+    ""
+  );
 }
 
 export function getSessionSiteId(item: any): string {

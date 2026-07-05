@@ -8,11 +8,12 @@ FROM node:20-alpine AS deps
 
 WORKDIR /app
 
-# Copy only dependency manifests first for layer caching
-COPY package.json package-lock.json ./
+# Copy only dependency manifests first for layer caching. The lockfile is
+# optional because this backend can be deployed independently from /frontend.
+COPY package*.json ./
 
 # Install all deps (including devDeps needed for prisma generate)
-RUN npm ci
+RUN npm install
 
 # ── Runtime stage ──────────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
@@ -33,4 +34,4 @@ EXPOSE 4000
 
 # start.sh handles: prisma migrate deploy → node src/index.js
 # All secrets are read from Railway's runtime environment — never baked in here.
-CMD ["bash", "start.sh"]
+CMD ["sh", "start.sh"]

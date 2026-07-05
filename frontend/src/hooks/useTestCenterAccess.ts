@@ -67,10 +67,12 @@ export function useTestCenterAccess(
         if (cancelled) return;
 
         const errorObject = err instanceof Error ? err : new Error(String(err));
-        console.error("useTestCenterAccess error:", err);
-        setError(errorObject);
-        setHasAccess(false);
-        if (onAccessDenied) onAccessDenied();
+        // Log error but allow access as fallback (let backend enforce final check)
+        // This prevents guard from being too restrictive on network/timeout errors
+        console.warn("useTestCenterAccess warning:", err);
+        setError(null);
+        setHasAccess(true);
+        // Do not call onAccessDenied - allow user to proceed to page
       }
     };
 
@@ -140,10 +142,10 @@ export function useIsTestCenterOwner(
         if (cancelled) return;
 
         const errorObject = err instanceof Error ? err : new Error(String(err));
-        console.error("useIsTestCenterOwner error:", err);
-        setError(errorObject);
+        // Log error but treat as "not owner" (allow page to render, later api calls will fail if user lacks permission)
+        console.warn("useIsTestCenterOwner warning:", err);
+        setError(null);
         setIsOwner(false);
-        if (onOwnerCheckFail) onOwnerCheckFail();
       }
     };
 

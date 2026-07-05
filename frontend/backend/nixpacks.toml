@@ -8,4 +8,4 @@ cmds = ["npm install --production=false"]
 cmds = ["node_modules/.bin/prisma generate"]
 
 [start]
-cmd = "bash start.sh"
+cmd = "sh start.sh"
