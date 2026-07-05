@@ -31,7 +31,7 @@ const T2HUB_BASE = "https://t2hub.app";
 const T2HUB_APP_PATH = "/takamol";
 
 let t2hubSession:
-  | { keyRaw: string; cookie: string; expiresAt: number }
+  | { keyRaw: string; cookie: string; appPath: string; expiresAt: number }
   | null = null;
 
 async function svpFetch(
@@ -96,27 +96,45 @@ function extractT2HubCookie(headers: Headers): string {
     .join("; ");
 }
 
-async function getT2HubSession() {
-  if (t2hubSession && t2hubSession.expiresAt > Date.now()) return t2hubSession;
+function extractT2HubKey(html: string): string {
+  return html.match(/window\.__sk\s*=\s*['"]([^'"]+)['"]/)?.[1] || "";
+}
 
-  const res = await fetch(`${T2HUB_BASE}${T2HUB_APP_PATH}`, {
+async function fetchT2HubSessionPage(appPath: string) {
+  const res = await fetch(`${T2HUB_BASE}${appPath}`, {
     headers: {
       Accept: "text/html",
       "User-Agent": SVP_UA,
     },
   });
   const html = await res.text();
-  const keyRaw = html.match(/window\.__sk\s*=\s*'([^']+)'/)?.[1] || "";
-  if (!res.ok || !keyRaw) {
-    throw { statusCode: 502, message: "Failed to initialize t2hub session" };
+  return { res, html, keyRaw: extractT2HubKey(html) };
+}
+
+async function getT2HubSession() {
+  if (t2hubSession && t2hubSession.expiresAt > Date.now()) return t2hubSession;
+
+  const appPaths = [T2HUB_APP_PATH, `${T2HUB_APP_PATH}/`, `${T2HUB_APP_PATH}/agent/login`];
+  let lastStatus = 0;
+  for (const appPath of appPaths) {
+    const { res, keyRaw } = await fetchT2HubSessionPage(appPath);
+    lastStatus = res.status;
+    if (!res.ok || !keyRaw) continue;
+
+    t2hubSession = {
+      keyRaw,
+      cookie: extractT2HubCookie(res.headers),
+      appPath,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    };
+    return t2hubSession;
   }
 
-  t2hubSession = {
-    keyRaw,
-    cookie: extractT2HubCookie(res.headers),
-    expiresAt: Date.now() + 10 * 60 * 1000,
+  throw {
+    statusCode: 502,
+    message: "Failed to initialize t2hub session",
+    details: { status: lastStatus || undefined },
   };
-  return t2hubSession;
 }
 
 async function decryptT2HubEnvelope(envelope: any, keyRaw: string) {
@@ -129,12 +147,11 @@ async function decryptT2HubEnvelope(envelope: any, keyRaw: string) {
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
-async function t2hubFetch(path: string) {
-  const session = await getT2HubSession();
+async function fetchT2HubJson(path: string, session: NonNullable<typeof t2hubSession>) {
   const res = await fetch(`${T2HUB_BASE}${path}`, {
     headers: {
       Accept: "application/json, */*",
-      Referer: `${T2HUB_BASE}${T2HUB_APP_PATH}`,
+      Referer: `${T2HUB_BASE}${session.appPath}`,
       "User-Agent": SVP_UA,
       ...(session.cookie ? { Cookie: session.cookie } : {}),
     },
@@ -149,13 +166,20 @@ async function t2hubFetch(path: string) {
   if (!res.ok) {
     throw { statusCode: res.status, message: `t2hub request failed: ${res.status}`, details: data };
   }
+  return data;
+}
+
+async function t2hubFetch(path: string) {
+  const session = await getT2HubSession();
+  const data = await fetchT2HubJson(path, session);
 
   try {
     return await decryptT2HubEnvelope(data, session.keyRaw);
   } catch {
     t2hubSession = null;
     const fresh = await getT2HubSession();
-    return await decryptT2HubEnvelope(data, fresh.keyRaw);
+    const freshData = await fetchT2HubJson(path, fresh);
+    return await decryptT2HubEnvelope(freshData, fresh.keyRaw);
   }
 }
 
