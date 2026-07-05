@@ -151,6 +151,14 @@ router.get('/exam-session/:id', async (req, res, next) => {
   }
 });
 
+router.get('/exam-sessions/:id', async (req, res, next) => {
+  try {
+    res.json(await forward(req, 'GET', `/api/v1/individual_labor_space/exam_sessions/${req.params.id}`));
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/exam-reservations', async (req, res, next) => {
   try {
     res.json(await forward(req, 'GET', '/api/v1/individual_labor_space/exam_reservations'));
