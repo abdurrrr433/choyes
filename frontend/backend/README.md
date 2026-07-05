@@ -26,8 +26,8 @@ Backend runs at: http://localhost:4000
 
 ## Local With Live Railway Database
 If you want local backend code to run against the same live Railway Postgres database:
-- In `backend/.env`, use the public proxy URL:
-  - `DATABASE_URL=postgresql://postgres:your-password@switchback.proxy.rlwy.net:39012/railway`
+- In `backend/.env`, use the **public proxy URL** (not the internal URL — internal only works inside Railway's private network):
+  - `DATABASE_URL=postgresql://postgres:xMWUJnleYFxGaXMAvyXKQIHuNfBpqoms@switchback.proxy.rlwy.net:39012/railway`
 - Keep frontend local:
   - `frontend/.env.local` -> `VITE_BACKEND_URL=http://localhost:4000`
 - Keep backend CORS local:
@@ -75,14 +75,15 @@ Railway-provided runtime variables are automatic. You should not add them manual
 Required backend variables you must set manually in Railway:
 - `NODE_ENV=production`
 - `APP_NAME=SVP Backend API`
-- `CORS_ORIGINS=https://svp-book.vercel.app,https://svp-book-abdur-razzak-s-projects.vercel.app`
+- `CORS_ORIGINS=https://choyes-woad.vercel.app,https://svp-book.vercel.app,https://svp-book-abdur-razzak-s-projects.vercel.app`
+- `VERCEL_PROJECT_SLUG=choyes-woad`
 - `JWT_ACCESS_SECRET=<strong-random-secret>`
 - `JWT_REFRESH_SECRET=<strong-random-secret>`
 - `ACCESS_TOKEN_TTL_SECONDS=900`
 - `REFRESH_TOKEN_TTL_DAYS=14`
 - `COOKIE_SECURE=true`
 - `COOKIE_SAMESITE=none`
-- `DATABASE_URL=postgresql://postgres:your-password@postgres.railway.internal:5432/railway`
+- `DATABASE_URL=postgresql://postgres:xMWUJnleYFxGaXMAvyXKQIHuNfBpqoms@postgres.railway.internal:5432/railway`
 - `SVP_BASE_URL=https://svp-international-api.pacc.sa`
 - `SVP_LOCALE=en`
 - `SVP_FE_APP=legislator`

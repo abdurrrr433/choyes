@@ -39,6 +39,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
 const hardcodedOrigins = [
+  'https://choyes-woad.vercel.app',
   'https://svp-book.vercel.app',
   'https://svp-book-abdur-razzak-s-projects.vercel.app',
   'https://aci-root.vercel.app',
