@@ -113,3 +113,6 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Supabase CLI local cache
+frontend/supabase/.temp/
