@@ -27,6 +27,7 @@ export default function BookingPage() {
   const [sessionIdToSiteId, setSessionIdToSiteId] = useState<Map<string, string>>(new Map());
   // Section rules — deterministic fallback for sessions whose site_id changes daily.
   const [sectionRules, setSectionRules] = useState<SectionCenterRule[]>([]);
+  const [cityCenterOptions, setCityCenterOptions] = useState<{ siteId: string; name: string; city: string }[]>([]);
   const [selectedOccupationId, setSelectedOccupationId] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [availableDate, setAvailableDate] = useState("");
@@ -78,12 +79,19 @@ export default function BookingPage() {
   );
   const centerOptions = useMemo(() => {
     const options = buildCenterOptions(sessionsWithResolvedCenters);
+    const merged = new Map<string, { siteId: string; name: string; city: string }>();
     // Enrich with real test center names from the map
-    return options.map((opt) => ({
-      ...opt,
-      name: testCenterMap.get(opt.siteId) || opt.name,
-    }));
-  }, [sessionsWithResolvedCenters, testCenterMap]);
+    const hasCityDbCenters = cityCenterOptions.length > 0;
+    options.forEach((opt) => {
+      if (hasCityDbCenters && String(opt.siteId).startsWith("city:")) return;
+      merged.set(String(opt.siteId), {
+        ...opt,
+        name: testCenterMap.get(opt.siteId) || opt.name,
+      });
+    });
+    cityCenterOptions.forEach((opt) => merged.set(String(opt.siteId), opt));
+    return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [sessionsWithResolvedCenters, testCenterMap, cityCenterOptions]);
   const getResolvedSessionCenterName = (item: any) => {
     // SVP-first: if the session already carries its own real test_center_name
     // (new SVP shape), use that. This guarantees per-session correctness even
@@ -98,8 +106,18 @@ export default function BookingPage() {
     return getSessionCenterName(item);
   };
   const filteredSessions = useMemo(
-    () => selectedCenterId ? sessionsWithResolvedCenters.filter((item) => getCenterKey(item) === String(selectedCenterId)) : sessionsWithResolvedCenters,
-    [sessionsWithResolvedCenters, selectedCenterId]
+    () => {
+      if (!selectedCenterId) return sessionsWithResolvedCenters;
+      const exact = sessionsWithResolvedCenters.filter((item) => getCenterKey(item) === String(selectedCenterId));
+      if (exact.length) return exact;
+
+      const selectedCenter = centerOptions.find((item) => String(item.siteId) === String(selectedCenterId));
+      if (!selectedCenter?.city) return [];
+      return sessionsWithResolvedCenters.filter(
+        (item) => String(getSessionSiteCity(item)).trim().toLowerCase() === String(selectedCenter.city).trim().toLowerCase()
+      );
+    },
+    [sessionsWithResolvedCenters, selectedCenterId, centerOptions]
   );
   const selectedSession = useMemo(
     () => filteredSessions.find((item) => String(getSessionId(item)) === String(sessionId)) || null,
@@ -122,6 +140,16 @@ export default function BookingPage() {
     return options.length ? options : [fallback, fallback + 1];
   }, [availableDates]);
   const bookingMode = useMemo(() => detectBookingMode(balanceInfo), [balanceInfo]);
+
+  function getSessionPayloadId(value: string): number | string | null {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric) && String(numeric) === raw) {
+      return numeric > 0 ? numeric : null;
+    }
+    return raw;
+  }
 
   useEffect(() => {
     (async () => {
@@ -179,6 +207,26 @@ export default function BookingPage() {
     setAvailableDate(""); setSessions([]); setSelectedCenterId(""); setSessionId("");
     setSiteId(""); setSiteCity(selectedCity || ""); setHoldId(""); setReservationId("");
     if (selectedCity) setStatus(`City selected: ${selectedCity}. Loading sessions for the selected date.`);
+  }, [selectedCity]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!selectedCity) { setCityCenterOptions([]); return; }
+      const { data } = await supabase
+        .from("test_centers")
+        .select("site_id, name, city")
+        .eq("city", selectedCity)
+        .order("name", { ascending: true });
+      if (!active) return;
+      const rows = (data || []).map((row: any) => ({
+        siteId: String(row.site_id),
+        name: String(row.name || `Site #${row.site_id}`),
+        city: String(row.city || selectedCity),
+      }));
+      setCityCenterOptions(rows);
+    })();
+    return () => { active = false; };
   }, [selectedCity]);
 
   useEffect(() => {
@@ -474,11 +522,14 @@ export default function BookingPage() {
 
   useEffect(() => {
     if (!selectedSession) return;
-    setSiteId(String(getSessionSiteId(selectedSession) || ""));
+    const sessionSiteId = String(getSessionSiteId(selectedSession) || "");
+    if (sessionSiteId && sessionSiteId === String(selectedCenterId)) {
+      setSiteId(sessionSiteId);
+    }
     setSiteCity(String(getSessionSiteCity(selectedSession) || ""));
     const codes = getPrometricCodes(selectedSession);
     if (codes[0]?.code || codes[0]?.language_code) setLanguageCode(String(codes[0].code || codes[0].language_code));
-  }, [selectedSession]);
+  }, [selectedSession, selectedCenterId]);
 
   // Fetch session detail (status + seats) for the selected session
   useEffect(() => {
@@ -551,8 +602,8 @@ export default function BookingPage() {
     // Holding the whole city would let SVP confirm a different test center
     // when the booking POST is made with hold_id, because the hold covers
     // multiple distinct centers in the same city.
-    const selectedSessionId = Number(sessionId);
-    if (!Number.isFinite(selectedSessionId) || selectedSessionId <= 0) {
+    const selectedSessionId = getSessionPayloadId(sessionId);
+    if (selectedSessionId === null) {
       setError("No valid exam session selected for hold creation");
       return;
     }
@@ -602,7 +653,7 @@ export default function BookingPage() {
           method: "POST",
           body: {
             id: Number(oldReservationId),
-            exam_session_id: Number(sessionId),
+            exam_session_id: getSessionPayloadId(sessionId),
             language_code: rescheduleLanguageCode,
           },
         });
@@ -625,7 +676,7 @@ export default function BookingPage() {
         // only — SVP's own UI never forwards hold_id into the reservation POST).
         const data: any = await api("/exam-reservations", {
           method: "POST", body: {
-            exam_session_id: Number(sessionId), occupation_id: Number(selectedOccupationId),
+            exam_session_id: getSessionPayloadId(sessionId), occupation_id: Number(selectedOccupationId),
             methodology: methodology || "in_person", language_code: effectiveLanguageCode,
             site_id: null, site_city: null, hold_id: null,
           },

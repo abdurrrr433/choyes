@@ -17,10 +17,19 @@ import { describe, it, expect } from "vitest";
 import { getSessionId } from "@/lib/booking-utils";
 
 // Mirror of the createHold session-array computation (post-fix).
-function buildHoldSessionIds(selectedSessionId: string | number): number[] {
-  const n = Number(selectedSessionId);
-  if (!Number.isFinite(n) || n <= 0) return [];
-  return [n];
+function getSessionPayloadId(value: string | number): number | string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && String(numeric) === raw) {
+    return numeric > 0 ? numeric : null;
+  }
+  return raw;
+}
+
+function buildHoldSessionIds(selectedSessionId: string | number): Array<number | string> {
+  const id = getSessionPayloadId(selectedSessionId);
+  return id === null ? [] : [id];
 }
 
 // Mirror of the buggy old behavior for comparison.
@@ -41,8 +50,12 @@ describe("BookingPage createHold — single-session hold (SVP wrong center fix)"
   it("rejects invalid session ids", () => {
     expect(buildHoldSessionIds("")).toEqual([]);
     expect(buildHoldSessionIds("0")).toEqual([]);
-    expect(buildHoldSessionIds("abc")).toEqual([]);
     expect(buildHoldSessionIds(-1)).toEqual([]);
+  });
+
+  it("preserves encrypted live SVP exam-session ids", () => {
+    const encrypted = "fpCB8ZqACQ==--HWu2pq9m6P4MditA--xzo2UpARXVF5o8Xs2UVNFQ==";
+    expect(buildHoldSessionIds(encrypted)).toEqual([encrypted]);
   });
 
   it("extracts nested live SVP exam_session ids for hold creation", () => {

@@ -19,6 +19,16 @@
 import { describe, it, expect } from "vitest";
 
 // Mirror of the post-fix new-booking body construction in BookingPage.tsx.
+function getSessionPayloadId(value: string | number): number | string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && String(numeric) === raw) {
+    return numeric > 0 ? numeric : null;
+  }
+  return raw;
+}
+
 function buildReservationBody(args: {
   sessionId: string | number;
   selectedOccupationId: string | number;
@@ -31,7 +41,7 @@ function buildReservationBody(args: {
   holdId?: string | number | null;
 }) {
   return {
-    exam_session_id: Number(args.sessionId),
+    exam_session_id: getSessionPayloadId(args.sessionId),
     occupation_id: Number(args.selectedOccupationId),
     methodology: args.methodology || "in_person",
     language_code: args.effectiveLanguageCode,
@@ -108,6 +118,21 @@ describe("BookingPage exam_reservations POST — SVP-frontend-parity payload", (
       site_city: null,
       hold_id: null,
     });
+  });
+
+  it("preserves encrypted live SVP exam-session ids", () => {
+    const encrypted = "fpCB8ZqACQ==--HWu2pq9m6P4MditA--xzo2UpARXVF5o8Xs2UVNFQ==";
+    const body = buildReservationBody({
+      sessionId: encrypted,
+      selectedOccupationId: 2061,
+      methodology: "in_person",
+      effectiveLanguageCode: "LOABB",
+    });
+
+    expect(body.exam_session_id).toBe(encrypted);
+    expect(body.site_id).toBeNull();
+    expect(body.site_city).toBeNull();
+    expect(body.hold_id).toBeNull();
   });
 
   it("documents the old buggy payload that caused wrong-center bookings", () => {
