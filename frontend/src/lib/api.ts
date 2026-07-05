@@ -1,15 +1,42 @@
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 
-function getBaseUrl() {
-  if (SUPABASE_URL) return `${SUPABASE_URL}/functions/v1`;
-  // fallback to Railway if no Supabase URL
-  return "https://aci-api-production.up.railway.app";
+// Two possible backends:
+//  - Supabase edge functions (primary; used whenever VITE_SUPABASE_URL is set)
+//  - The Railway Express backend (frontend/backend/src) as a fallback otherwise.
+// Their route shapes differ:
+//   Supabase : /functions/v1/svp-proxy  /functions/v1/svp-auth
+//   Railway  : /api/svp                 /api/auth
+// Both the base URL and path prefixes are resolved together, so switching
+// backends never silently hits wrong routes.
+//
+// Set VITE_BACKEND_URL in your .env (or Vercel env vars) to point at the
+// Railway backend. The hardcoded string below is the documented default only —
+// change the env var, never the source.
+const RAILWAY_URL =
+  import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") ||
+  "https://choyes-production.up.railway.app";
+type FunctionKind = "proxy" | "testCenter";
+
+function resolveBackend() {
+  if (SUPABASE_URL) {
+    return {
+      base: `${SUPABASE_URL}/functions/v1`,
+      authPrefix: "/svp-auth",
+      proxyPrefix: (kind: FunctionKind) => (kind === "proxy" ? "/svp-proxy" : "/test-center-owner"),
+    };
+  }
+  return {
+    base: RAILWAY_URL,
+    authPrefix: "/api/auth",
+    // test-center-owner is a Supabase-only feature (see
+    // supabase/functions/test-center-owner) — no Railway equivalent exists yet.
+    proxyPrefix: (kind: FunctionKind) => (kind === "proxy" ? "/api/svp" : null),
+  };
 }
 
-const BASE = getBaseUrl();
+const { base: BASE, authPrefix: AUTH_PREFIX, proxyPrefix: PROXY_PREFIX } = resolveBackend();
 
-// Session state (stored in memory + localStorage)
 function getSession() {
   const accessToken = localStorage.getItem("accessToken");
   const refreshToken = localStorage.getItem("refreshToken");
@@ -45,7 +72,7 @@ export async function apiAuth<T = any>(
   action: string,
   body: any
 ): Promise<T> {
-  const { res, data } = await doFetch(`${BASE}/svp-auth${action}`, {
+  const { res, data } = await doFetch(`${BASE}${AUTH_PREFIX}${action}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -60,10 +87,18 @@ export async function apiAuth<T = any>(
 }
 
 async function callFunction<T = any>(
-  functionName: string,
+  kind: FunctionKind,
   path: string,
   { method = "GET", body, token }: { method?: string; body?: any; token?: string } = {}
 ): Promise<T> {
+  const prefix = PROXY_PREFIX(kind);
+  if (!prefix) {
+    throw new Error(
+      `The "${kind}" API isn't available on the active backend (no Supabase URL configured, ` +
+      `and the Railway fallback doesn't implement it yet).`
+    );
+  }
+
   const session = getSession();
   let access = token || session.accessToken;
 
@@ -81,11 +116,11 @@ async function callFunction<T = any>(
     return status === 401 || (status === 500 && message.includes("token expired"));
   };
 
-  let { res, data } = await doFetch(`${BASE}/${functionName}${path}`, makeOpts(access));
+  let { res, data } = await doFetch(`${BASE}${prefix}${path}`, makeOpts(access));
 
   if (shouldRefresh(res.status, data) && session.refreshToken && session.sessionId) {
     try {
-      const refreshRes = await doFetch(`${BASE}/svp-auth/refresh`, {
+      const refreshRes = await doFetch(`${BASE}${AUTH_PREFIX}/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: session.sessionId, refreshToken: session.refreshToken }),
@@ -94,7 +129,7 @@ async function callFunction<T = any>(
       if (refreshRes.res.ok && refreshRes.data?.accessToken) {
         access = refreshRes.data.accessToken;
         localStorage.setItem("accessToken", access);
-        ({ res, data } = await doFetch(`${BASE}/${functionName}${path}`, makeOpts(access)));
+        ({ res, data } = await doFetch(`${BASE}${prefix}${path}`, makeOpts(access)));
       } else if (refreshRes.res.status === 401) {
         clearSession();
       }
@@ -115,7 +150,7 @@ export async function api<T = any>(
   path: string,
   opts: { method?: string; body?: any; token?: string } = {}
 ): Promise<T> {
-  return callFunction<T>("svp-proxy", path, opts);
+  return callFunction<T>("proxy", path, opts);
 }
 
 // Real calls to the test-center-owner edge function (validate_access, owner-status,
@@ -125,11 +160,21 @@ export async function apiTestCenter<T = any>(
   path: string,
   opts: { method?: string; body?: any; token?: string } = {}
 ): Promise<T> {
-  return callFunction<T>("test-center-owner", path, opts);
+  return callFunction<T>("testCenter", path, opts);
 }
 
 export { saveSession, clearSession, getSession };
 
 export function getBackendUrl() {
   return BASE;
+}
+
+// The correct path prefix to append to getBackendUrl() for direct/raw fetches
+// (e.g. streaming a ticket PDF) that bypass api()/callFunction(). Using a
+// hardcoded "/svp-proxy" here previously broke the Railway fallback the same
+// way api() did.
+export function getProxyPrefix(): string {
+  const prefix = PROXY_PREFIX("proxy");
+  if (!prefix) throw new Error("No proxy backend is configured.");
+  return prefix;
 }

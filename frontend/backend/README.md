@@ -29,7 +29,7 @@ If you want local backend code to run against the same live Railway Postgres dat
 - In `backend/.env`, use the public proxy URL:
   - `DATABASE_URL=postgresql://postgres:your-password@switchback.proxy.rlwy.net:39012/railway`
 - Keep frontend local:
-  - `frontend/.env.local` -> `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000`
+  - `frontend/.env.local` -> `VITE_BACKEND_URL=http://localhost:4000`
 - Keep backend CORS local:
   - `CORS_ORIGINS=http://localhost:3000`
 
@@ -68,8 +68,8 @@ Use these Railway settings for the backend service:
 - Health Check Path: `/health`
 
 Railway-provided runtime variables are automatic. You should not add them manually:
-- `RAILWAY_PUBLIC_DOMAIN=aci-api-production.up.railway.app`
-- `RAILWAY_PRIVATE_DOMAIN=aci-api.railway.internal`
+- `RAILWAY_PUBLIC_DOMAIN=choyes-production.up.railway.app`
+- `RAILWAY_PRIVATE_DOMAIN=choyes.railway.internal`
 - `RAILWAY_TCP_APPLICATION_PORT=4000`
 
 Required backend variables you must set manually in Railway:
@@ -88,17 +88,26 @@ Required backend variables you must set manually in Railway:
 - `SVP_FE_APP=legislator`
 - `SESSION_ENC_KEY_BASE64=<32-byte-base64-key>`
 
+Required frontend env vars (set in Vercel → Project Settings → Environment Variables):
+- `VITE_SUPABASE_URL=https://qdlqrsvkenalwhmfdbaf.supabase.co`
+- `VITE_SUPABASE_PUBLISHABLE_KEY=<your-supabase-anon-key>`
+- `VITE_SUPABASE_PROJECT_ID=qdlqrsvkenalwhmfdbaf`
+- `VITE_BACKEND_URL=https://choyes-production.up.railway.app`
+  (When VITE_SUPABASE_URL is set, all API traffic goes through Supabase edge
+   functions. VITE_BACKEND_URL is used as the fallback if Supabase is not
+   configured, and by direct ticket-PDF fetches. Always keep it current.)
+
 Database URL rule:
 - Local machine uses Railway public proxy URL.
 - Railway backend service uses Railway internal database URL.
 
 Expected live health URL:
-- `https://aci-api-production.up.railway.app/health`
+- `https://choyes-production.up.railway.app/health`
 
 Expected production flow:
-- `https://svp-book.vercel.app` -> frontend
-- `https://aci-api-production.up.railway.app` -> backend
-- `https://svp-international-api.pacc.sa` -> upstream API used by backend only
+- `https://svp-book.vercel.app` -> frontend (Vercel)
+- `https://choyes-production.up.railway.app` -> backend (Railway)
+- `https://svp-international-api.pacc.sa` -> upstream SVP API (backend only)
 
 ## API
 - POST /api/auth/login

@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { api, getSession, getBackendUrl } from "@/lib/api";
+import { api, getSession, getBackendUrl, getProxyPrefix } from "@/lib/api";
 
 function pickArray(payload: any): any[] {
   if (Array.isArray(payload)) return payload;
@@ -143,7 +143,7 @@ export default function ReservationsPage() {
     try {
       const { accessToken } = getSession();
       const base = getBackendUrl();
-      const response = await fetch(`${base}/svp-proxy/tickets/${encodeURIComponent(reservationId)}/show-pdf?locale=en`, {
+      const response = await fetch(`${base}${getProxyPrefix()}/tickets/${encodeURIComponent(reservationId)}/show-pdf?locale=en`, {
         method: "GET", headers: { Accept: "*/*", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
       });
       if (!response.ok) { throw new Error(await response.text() || "Failed to download ticket PDF"); }

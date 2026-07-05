@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { api, getSession, getBackendUrl } from "@/lib/api";
+import { api, getSession, getBackendUrl, getProxyPrefix } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
 import { extractTestCenterId } from "@/lib/test-centers";
 import {
@@ -656,7 +656,7 @@ export default function BookingPage() {
   async function openTicketPdf(nextReservationId: string) {
     const { accessToken } = getSession();
     const base = getBackendUrl();
-    const response = await fetch(`${base}/svp-proxy/tickets/${encodeURIComponent(nextReservationId)}/show-pdf?locale=en`, {
+    const response = await fetch(`${base}${getProxyPrefix()}/tickets/${encodeURIComponent(nextReservationId)}/show-pdf?locale=en`, {
       method: "GET", headers: { Accept: "*/*", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
     });
     if (!response.ok) { throw new Error(await response.text() || "Failed to open ticket PDF"); }
