@@ -146,9 +146,16 @@ export default function BookingPage() {
       if (exact.length) return exact;
 
       const selectedCenter = centerOptions.find((item) => String(item.siteId) === String(selectedCenterId));
-      if (!selectedCenter?.city) return [];
+      if (!selectedCenter) return [];
+      if (String(selectedCenter.siteId).startsWith("city:") && selectedCenter.city) {
+        return sessionsWithResolvedCenters.filter(
+          (item) => String(getSessionSiteCity(item)).trim().toLowerCase() === String(selectedCenter.city).trim().toLowerCase()
+        );
+      }
+      const selectedName = String(selectedCenter.name || "").trim().toLowerCase();
+      if (!selectedName) return [];
       return sessionsWithResolvedCenters.filter(
-        (item) => String(getSessionSiteCity(item)).trim().toLowerCase() === String(selectedCenter.city).trim().toLowerCase()
+        (item) => getResolvedSessionCenterName(item).trim().toLowerCase() === selectedName
       );
     },
     [sessionsWithResolvedCenters, selectedCenterId, centerOptions]
@@ -929,14 +936,11 @@ export default function BookingPage() {
               <option value="">{loadingSessions ? "Loading sessions..." : "Select session"}</option>
               {filteredSessions.map((item) => {
                 const sid = getSessionSiteId(item);
-                const exactCenterMatch = sid && String(sid) === String(selectedCenterId);
-                const realName = exactCenterMatch
-                  ? getResolvedSessionCenterName(item)
-                  : (selectedCenterOption?.name || getResolvedSessionCenterName(item));
+                const realName = getResolvedSessionCenterName(item);
                 const seats = item?.available_seats ?? item?.seats_available ?? item?.remaining_seats ?? null;
                 return (
                   <option key={getSessionId(item)} value={getSessionId(item)}>
-                    {realName}{exactCenterMatch && sid ? ` (Site #${sid})` : ""} | Session #{getSessionId(item)}{seats !== null && seats !== undefined ? ` | Seats: ${seats}` : ""}
+                    {realName}{sid ? ` (Site #${sid})` : ""} | Session #{getSessionId(item)}{seats !== null && seats !== undefined ? ` | Seats: ${seats}` : ""}
                   </option>
                 );
               })}
@@ -963,7 +967,7 @@ export default function BookingPage() {
           <div><span>Test Center ID:</span> <strong>{
             extractTestCenterId(selectedSession) || extractTestCenterId(sessionDetail) || siteId || "-"
           }</strong></div>
-          <div><span>Test Center:</span> <strong>{selectedCenterOption?.name || (selectedSession ? getResolvedSessionCenterName(selectedSession) : "-")}</strong></div>
+          <div><span>Test Center:</span> <strong>{selectedSession ? getResolvedSessionCenterName(selectedSession) : (selectedCenterOption?.name || "-")}</strong></div>
           <div><span>Exam Session ID:</span> <strong>{sessionDetail?.id ? `#${sessionDetail.id}` : (sessionId ? `#${sessionId}` : "-")}</strong></div>
           <div><span>Session Status:</span> <strong>{loadingSeats ? "Loading..." : (sessionDetail?.status || "-")}</strong></div>
           <div><span>Hold ID:</span> <strong>{holdId || "-"}</strong></div>
