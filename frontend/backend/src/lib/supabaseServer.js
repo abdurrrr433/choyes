@@ -26,6 +26,18 @@ export function requireSupabaseEnv() {
   if (error) throw error;
 }
 
+export function hasSupabaseEnv() {
+  return [
+    'SUPABASE_URL',
+    'SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_SECRET_KEY',
+    'SUPABASE_JWKS_URL',
+  ].every((key) => {
+    const value = process.env[key];
+    return value && String(value).trim();
+  });
+}
+
 export function createSupabaseAdmin() {
   return createAdminClient({ supabaseOptions });
 }

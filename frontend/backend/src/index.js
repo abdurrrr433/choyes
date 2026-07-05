@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { authRouter } from './routes/auth.js';
 import { svpRouter } from './routes/svp.js';
-import { createSupabaseAdmin, createSupabaseAnon, requireSupabaseEnv } from './lib/supabaseServer.js';
+import { createSupabaseAdmin, createSupabaseAnon, hasSupabaseEnv, requireSupabaseEnv } from './lib/supabaseServer.js';
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -24,7 +24,11 @@ function validateEnv() {
   ];
 
   for (const key of required) requireEnv(key);
-  requireSupabaseEnv();
+  if (hasSupabaseEnv()) {
+    requireSupabaseEnv();
+  } else {
+    console.warn('Supabase server env is incomplete; /health/supabase will be unavailable.');
+  }
 }
 
 validateEnv();
@@ -109,6 +113,12 @@ app.get('/health', (_, res) => res.json({
 
 app.get('/health/supabase', async (_, res, next) => {
   try {
+    if (!hasSupabaseEnv()) {
+      return res.status(503).json({
+        ok: false,
+        message: 'Supabase server env is incomplete',
+      });
+    }
     const anon = createSupabaseAnon();
     const admin = createSupabaseAdmin();
     const authHealth = await anon.auth.getSession();
