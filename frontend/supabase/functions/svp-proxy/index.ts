@@ -27,6 +27,12 @@ const SVP_LOCALE = "en";
 const SVP_ORIGIN = "https://svp-international.pacc.sa";
 const SVP_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
+const T2HUB_BASE = "https://t2hub.app";
+const T2HUB_APP_PATH = "/takamol";
+
+let t2hubSession:
+  | { keyRaw: string; cookie: string; expiresAt: number }
+  | null = null;
 
 async function svpFetch(
   path: string,
@@ -77,6 +83,107 @@ async function svpFetchRaw(
       "User-Agent": SVP_UA,
     },
   });
+}
+
+function extractT2HubCookie(headers: Headers): string {
+  const anyHeaders = headers as Headers & { getSetCookie?: () => string[] };
+  const setCookies = anyHeaders.getSetCookie?.() || [];
+  const raw = setCookies.length ? setCookies : [headers.get("set-cookie") || ""];
+  return raw
+    .flatMap((item) => item.split(/,(?=\s*[^;,]+=)/))
+    .map((item) => item.trim().split(";")[0])
+    .filter(Boolean)
+    .join("; ");
+}
+
+async function getT2HubSession() {
+  if (t2hubSession && t2hubSession.expiresAt > Date.now()) return t2hubSession;
+
+  const res = await fetch(`${T2HUB_BASE}${T2HUB_APP_PATH}`, {
+    headers: {
+      Accept: "text/html",
+      "User-Agent": SVP_UA,
+    },
+  });
+  const html = await res.text();
+  const keyRaw = html.match(/window\.__sk\s*=\s*'([^']+)'/)?.[1] || "";
+  if (!res.ok || !keyRaw) {
+    throw { statusCode: 502, message: "Failed to initialize t2hub session" };
+  }
+
+  t2hubSession = {
+    keyRaw,
+    cookie: extractT2HubCookie(res.headers),
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  };
+  return t2hubSession;
+}
+
+async function decryptT2HubEnvelope(envelope: any, keyRaw: string) {
+  if (!envelope?.p || !envelope?.iv) return envelope;
+  const keyBytes = Uint8Array.from(atob(keyRaw), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]);
+  const iv = Uint8Array.from(atob(envelope.iv), (c) => c.charCodeAt(0));
+  const cipher = Uint8Array.from(atob(envelope.p), (c) => c.charCodeAt(0));
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher);
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+async function t2hubFetch(path: string) {
+  const session = await getT2HubSession();
+  const res = await fetch(`${T2HUB_BASE}${path}`, {
+    headers: {
+      Accept: "application/json, */*",
+      Referer: `${T2HUB_BASE}${T2HUB_APP_PATH}`,
+      "User-Agent": SVP_UA,
+      ...(session.cookie ? { Cookie: session.cookie } : {}),
+    },
+  });
+  const text = await res.text();
+  let data: any;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+  if (!res.ok) {
+    throw { statusCode: res.status, message: `t2hub request failed: ${res.status}`, details: data };
+  }
+
+  try {
+    return await decryptT2HubEnvelope(data, session.keyRaw);
+  } catch {
+    t2hubSession = null;
+    const fresh = await getT2HubSession();
+    return await decryptT2HubEnvelope(data, fresh.keyRaw);
+  }
+}
+
+function t2hubQuery(path: string, params: URLSearchParams) {
+  const queryString = params.toString();
+  return `${T2HUB_APP_PATH}/api${path}${queryString ? `?${queryString}` : ""}`;
+}
+
+function normalizeT2HubSession(item: any, centerByName: Map<string, any>) {
+  const centerName = String(item?.center_name || item?.test_center_name || "").trim();
+  const center = centerByName.get(centerName.toLowerCase());
+  const siteId = String(center?.id || center?.center || item?.site_id || item?.test_center_id || "");
+  const encryptedId = String(item?.encrypted_session_id || item?.id || item?.exam_session_id || "");
+  return {
+    ...item,
+    id: encryptedId || String(item?.session_id || ""),
+    exam_session_id: encryptedId || String(item?.session_id || ""),
+    numeric_session_id: item?.session_id ?? null,
+    site_id: siteId || undefined,
+    site_city: item?.center_city || center?.raw_city || center?.division || "",
+    test_center: {
+      ...(item?.test_center || {}),
+      ...(siteId ? { id: siteId, site_id: siteId, test_center_id: siteId } : {}),
+      ...(centerName ? { name: centerName, test_center_name: centerName } : {}),
+      test_center_city: item?.center_city || center?.raw_city || center?.division || "",
+      city: item?.center_city || center?.raw_city || center?.division || "",
+    },
+  };
 }
 
 // ── Crypto ──────────────────────────────────────────────────────────
@@ -229,6 +336,41 @@ Deno.serve(async (req) => {
           if (err?.statusCode !== 404 || i === paths.length - 1) throw err;
         }
       }
+    }
+
+    // ── t2hub city test centers ──────────────────────────────
+    if (req.method === "GET" && path === "/t2hub/test-centers") {
+      const params = new URLSearchParams(query);
+      params.delete("locale");
+      const city = params.get("city") || "";
+      if (!city) throw { statusCode: 400, message: "Missing city" };
+      const data = await t2hubFetch(t2hubQuery("/test-centers", params));
+      return json(data);
+    }
+
+    // ── t2hub city-wide PACC sessions ────────────────────────
+    if (req.method === "GET" && path === "/t2hub/pacc-exam-sessions") {
+      const params = new URLSearchParams(query);
+      params.delete("locale");
+      const city = params.get("city") || "";
+      const categoryId = params.get("category_id") || "";
+      const examDate = params.get("exam_date") || "";
+      if (!city || !categoryId || !examDate) {
+        throw { statusCode: 400, message: "Missing city, category_id, or exam_date" };
+      }
+
+      const [centersData, sessionsData] = await Promise.all([
+        t2hubFetch(t2hubQuery("/test-centers", new URLSearchParams({ city }))),
+        t2hubFetch(t2hubQuery("/pacc-exam-sessions", params)),
+      ]);
+      const centers: any[] = Array.isArray(centersData?.sites) ? centersData.sites : [];
+      const centerByName = new Map(
+        centers.map((center: any) => [String(center?.name || "").trim().toLowerCase(), center])
+      );
+      const sessions = (Array.isArray(sessionsData?.sessions) ? sessionsData.sessions : [])
+        .map((item: any) => normalizeT2HubSession(item, centerByName));
+
+      return json({ ...sessionsData, sessions, exam_sessions: sessions, sites: centers });
     }
 
     // ── Exam sessions (enriched with available_seats) ────────

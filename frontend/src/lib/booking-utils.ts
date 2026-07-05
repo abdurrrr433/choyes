@@ -9,6 +9,8 @@ export function pickArray(payload: any): any[] {
   if (Array.isArray(payload?.data?.occupations)) return payload.data.occupations;
   if (Array.isArray(payload?.exam_sessions)) return payload.exam_sessions;
   if (Array.isArray(payload?.data?.exam_sessions)) return payload.data.exam_sessions;
+  if (Array.isArray(payload?.sessions)) return payload.sessions;
+  if (Array.isArray(payload?.data?.sessions)) return payload.data.sessions;
   if (Array.isArray(payload?.available_dates)) return payload.available_dates;
   if (Array.isArray(payload?.data?.available_dates)) return payload.data.available_dates;
   if (Array.isArray(payload?.prometric_codes)) return payload.prometric_codes;
@@ -63,6 +65,7 @@ export function normalizeOccupation(item: any): NormalizedOccupation {
 
 export function getSessionId(item: any): string {
   return String(
+    item?.encrypted_session_id ||
     item?.id ||
     item?.session_id ||
     item?.exam_session_id ||
