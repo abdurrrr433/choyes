@@ -687,7 +687,10 @@ export default function BookingPage() {
 
   async function bookReservation() {
     if (!sessionId) { setError("Select test center / session first"); return; }
-    try { await api(`/exam-session/${encodeURIComponent(sessionId)}?locale=en`); }
+    const selectedSessionPayloadId = getSessionPayloadId(getSessionId(selectedSession) || sessionId);
+    if (selectedSessionPayloadId === null) { setError("No valid exam session selected"); return; }
+    const selectedSessionIdForApi = String(selectedSessionPayloadId);
+    try { await api(`/exam-session/${encodeURIComponent(selectedSessionIdForApi)}?locale=en`); }
     catch (err: any) { setError(err?.message || "Selected exam session is no longer available"); return; }
     const sessionCodes = getPrometricCodes(selectedSession);
     const effectiveLanguageCode = languageCode || selectedOccupation?.languageCodes?.[0]?.code || sessionCodes?.[0]?.code || sessionCodes?.[0]?.language_code || "";
@@ -720,7 +723,7 @@ export default function BookingPage() {
           method: "POST",
           body: {
             id: Number(oldReservationId),
-            exam_session_id: getSessionPayloadId(sessionId),
+            exam_session_id: selectedSessionPayloadId,
             language_code: rescheduleLanguageCode,
           },
         });
@@ -743,7 +746,7 @@ export default function BookingPage() {
         // only — SVP's own UI never forwards hold_id into the reservation POST).
         const data: any = await api("/exam-reservations", {
           method: "POST", body: {
-            exam_session_id: getSessionPayloadId(sessionId), occupation_id: Number(selectedOccupationId),
+            exam_session_id: selectedSessionPayloadId, occupation_id: Number(selectedOccupationId),
             methodology: methodology || "in_person", language_code: effectiveLanguageCode,
             site_id: null, site_city: null, hold_id: null,
           },
@@ -1016,9 +1019,9 @@ export default function BookingPage() {
                   <div style={{ fontSize: "13px", lineHeight: "1.6" }}>
                     <div><span style={{ color: "#888" }}>Session:</span> <strong>#{sessionId || "-"}</strong></div>
                     <div><span style={{ color: "#888" }}>Date:</span> <strong>{availableDate || "-"}</strong></div>
-                    <div><span style={{ color: "#888" }}>Site:</span> <strong>#{siteId || "-"}</strong></div>
-                    <div><span style={{ color: "#888" }}>City:</span> <strong>{siteCity || selectedCity || "-"}</strong></div>
-                    <div><span style={{ color: "#888" }}>Center:</span> <strong>{centerOptions.find(c => String(c.siteId) === String(selectedCenterId))?.name || "-"}</strong></div>
+                    <div><span style={{ color: "#888" }}>Site:</span> <strong>#{selectedSession ? (getSessionSiteId(selectedSession) || siteId || "-") : (siteId || "-")}</strong></div>
+                    <div><span style={{ color: "#888" }}>City:</span> <strong>{selectedSession ? (getSessionSiteCity(selectedSession) || siteCity || selectedCity || "-") : (siteCity || selectedCity || "-")}</strong></div>
+                    <div><span style={{ color: "#888" }}>Center:</span> <strong>{selectedSession ? getResolvedSessionCenterName(selectedSession) : (centerOptions.find(c => String(c.siteId) === String(selectedCenterId))?.name || "-")}</strong></div>
                   </div>
                 </div>
               </div>

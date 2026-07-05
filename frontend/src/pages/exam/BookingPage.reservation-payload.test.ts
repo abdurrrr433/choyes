@@ -51,6 +51,18 @@ function buildReservationBody(args: {
   };
 }
 
+function buildRescheduleBody(args: {
+  oldReservationId: string | number;
+  sessionId: string | number;
+  languageCode: string;
+}) {
+  return {
+    id: Number(args.oldReservationId),
+    exam_session_id: getSessionPayloadId(args.sessionId),
+    language_code: args.languageCode,
+  };
+}
+
 // Mirror of the old buggy body construction.
 function buildReservationBody_BUGGY(args: {
   sessionId: string | number;
@@ -133,6 +145,21 @@ describe("BookingPage exam_reservations POST — SVP-frontend-parity payload", (
     expect(body.site_id).toBeNull();
     expect(body.site_city).toBeNull();
     expect(body.hold_id).toBeNull();
+  });
+
+  it("preserves encrypted live SVP exam-session ids for reschedule", () => {
+    const encrypted = "57pDq4THw==--Id8y92OLe+oKN9bs--pOVyIUUgdY3gD6b66pEliQ==";
+    const body = buildRescheduleBody({
+      oldReservationId: 987654,
+      sessionId: encrypted,
+      languageCode: "LOANN",
+    });
+
+    expect(body).toEqual({
+      id: 987654,
+      exam_session_id: encrypted,
+      language_code: "LOANN",
+    });
   });
 
   it("documents the old buggy payload that caused wrong-center bookings", () => {
