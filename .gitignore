@@ -1,5 +1,12 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Environment files — NEVER commit real credentials
+# Copy .env.example to .env and fill in real values locally.
+# Set real values in Vercel/Railway dashboard for production.
+.env
+.env.local
+.env.*.local
+
 # IDE and editors
 .idea/
 .vscode/
