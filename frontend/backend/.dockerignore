@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log*
+.env
+.env.*
+*.env
+.git
+.gitignore
+README.md
+docker-compose.yml
+Dockerfile*
+.dockerignore
+.node-version
+nixpacks.toml
+prisma/migrations/*.sql.bak
+dist
+coverage

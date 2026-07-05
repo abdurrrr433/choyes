@@ -1,5 +1,6 @@
 [build]
-builder = "NIXPACKS"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "bash start.sh"
@@ -7,7 +8,3 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
-
-# If Railway dashboard still shows RAILPACK / express-build after deploying:
-# Go to Railway → Service → Settings → Build → Builder and manually set to NIXPACKS
-# then trigger a manual redeploy.
