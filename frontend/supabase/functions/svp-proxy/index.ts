@@ -375,6 +375,29 @@ Deno.serve(async (req) => {
 
     // ── Exam sessions (enriched with available_seats) ────────
     if (req.method === "GET" && path === "/exam-sessions") {
+      const sessionParams = new URLSearchParams(query);
+      const city = sessionParams.get("city") || "";
+      const categoryId = sessionParams.get("category_id") || "";
+      const examDate = sessionParams.get("exam_date") || "";
+      if (city && categoryId && examDate) {
+        try {
+          sessionParams.delete("locale");
+          const [centersData, sessionsData] = await Promise.all([
+            t2hubFetch(t2hubQuery("/test-centers", new URLSearchParams({ city }))),
+            t2hubFetch(t2hubQuery("/pacc-exam-sessions", sessionParams)),
+          ]);
+          const centers: any[] = Array.isArray(centersData?.sites) ? centersData.sites : [];
+          const centerByName = new Map(
+            centers.map((center: any) => [String(center?.name || "").trim().toLowerCase(), center])
+          );
+          const sessions = (Array.isArray(sessionsData?.sessions) ? sessionsData.sessions : [])
+            .map((item: any) => normalizeT2HubSession(item, centerByName));
+          return json({ ...sessionsData, sessions, exam_sessions: sessions, sites: centers });
+        } catch {
+          // Fall back to the official SVP endpoint below if t2hub is unavailable.
+        }
+      }
+
       const listData: any = await svpFetch(
         buildPath("/api/v1/individual_labor_space/exam_sessions", query),
         { method: "GET", token: svpToken }
