@@ -4,9 +4,13 @@
 # are NOT passed as ARG or ENV here. They are injected by Railway at runtime
 # via its environment variable system and read by the app via process.env.
 # This satisfies Docker's SecretsUsedInArgOrEnv lint rule.
-FROM node:20-alpine AS deps
+FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy only dependency manifests first for layer caching. The lockfile is
 # optional because this backend can be deployed independently from /frontend.
@@ -16,9 +20,13 @@ COPY package*.json ./
 RUN npm install
 
 # ── Runtime stage ──────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy installed node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
