@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 const createFallbackClient = (): any => {
   const fallbackResult = Promise.resolve({ data: null, error: { message: 'Supabase not configured' } });
@@ -50,7 +50,7 @@ const supabase =
     : createFallbackClient();
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-  console.warn('Supabase is not configured. The supabase client is disabled until VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are provided.');
+  console.warn('Supabase is not configured. The supabase client is disabled until VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY are provided.');
 }
 
 export { supabase };
