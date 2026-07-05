@@ -114,16 +114,28 @@ export default function BookingPage() {
   const centerOptions = useMemo(() => {
     const options = buildCenterOptions(sessionsWithResolvedCenters);
     const merged = new Map<string, { siteId: string; name: string; city: string }>();
-    // Enrich with real test center names from the map
+    const sessionBackedSiteIds = new Set(options.map((opt) => String(opt.siteId)));
+
+    // When sessions are loaded, the dropdown must only contain centers that
+    // actually have available sessions. Otherwise a city-wide t2hub center list
+    // can auto-select a center with no matching session and make the Exam
+    // Session dropdown look broken. Use cityCenterOptions only to enrich the
+    // matching session-backed center name, or as a pre-session fallback.
+    const hasSessionBackedCenters = options.length > 0;
     const hasCityDbCenters = cityCenterOptions.length > 0;
     options.forEach((opt) => {
       if (hasCityDbCenters && String(opt.siteId).startsWith("city:")) return;
+      const liveCenter = cityCenterOptions.find((item) => String(item.siteId) === String(opt.siteId));
       merged.set(String(opt.siteId), {
         ...opt,
-        name: testCenterMap.get(opt.siteId) || opt.name,
+        name: liveCenter?.name || testCenterMap.get(opt.siteId) || opt.name,
+        city: liveCenter?.city || opt.city,
       });
     });
-    cityCenterOptions.forEach((opt) => merged.set(String(opt.siteId), opt));
+    cityCenterOptions.forEach((opt) => {
+      if (hasSessionBackedCenters && !sessionBackedSiteIds.has(String(opt.siteId))) return;
+      merged.set(String(opt.siteId), opt);
+    });
     return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [sessionsWithResolvedCenters, testCenterMap, cityCenterOptions]);
   const getResolvedSessionCenterName = (item: any) => {
