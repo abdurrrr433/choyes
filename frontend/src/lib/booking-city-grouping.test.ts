@@ -12,8 +12,8 @@ import {
  * every session has site_id=null and no test_center_id — only city is reliable.
  * The booking UI must:
  *   1. Group all same-city sessions under ONE test-center option in the dropdown.
- *   2. Resolve that option's label to the canonical name from public.test_centers
- *      (looked up by city when no site_id is available).
+ *   2. Resolve that option's label from public.test_centers only when the city
+ *      has one configured center. Multi-center cities are ambiguous.
  *   3. Still expose every distinct exam_session_id when the city is selected.
  */
 
@@ -34,10 +34,16 @@ const SVP_PAYLOAD = {
 // Simulates BookingPage's city-fallback DB lookup for public.test_centers
 function buildCityNameMap(sessions: any[], dbRows: { city: string; name: string }[]) {
   const byCity = new Map<string, string>();
+  const cityCounts = new Map<string, number>();
   dbRows.forEach((r) => {
     const c = String(r.city || "").trim().toLowerCase();
-    if (c && !byCity.has(c)) byCity.set(c, r.name);
+    if (!c) return;
+    cityCounts.set(c, (cityCounts.get(c) || 0) + 1);
+    if (!byCity.has(c)) byCity.set(c, r.name);
   });
+  for (const [city, count] of cityCounts) {
+    if (count !== 1) byCity.delete(city);
+  }
   const map = new Map<string, string>();
   sessions.forEach((s) => {
     const key = getCenterKey(s);
@@ -85,6 +91,18 @@ describe("BookingPage integration: SVP sessions with site_id=null grouped by cit
       const name = map.get(getCenterKey(s)) || getSessionCenterName(s);
       expect(name).toBe("Dhaka Skills Center");
     });
+  });
+
+  it("does not guess a center name when one city has multiple configured centers", () => {
+    const map = buildCityNameMap(sessions, [
+      { city: "Dhaka", name: "Bangladesh Korea TTC Dhaka" },
+      { city: "Dhaka", name: "Bangladesh German TTC" },
+    ]);
+    const dhaka = sessions.find((s) => s.test_center.city === "Dhaka")!;
+    const label = map.get(getCenterKey(dhaka)) || getSessionCenterName(dhaka);
+
+    expect(map.has("city:dhaka")).toBe(false);
+    expect(label).toBe("Dhaka");
   });
 
   it("selecting a city exposes ALL of that city's exam_session_ids", () => {

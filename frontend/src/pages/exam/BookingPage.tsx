@@ -394,10 +394,9 @@ export default function BookingPage() {
         });
       }
 
-      // 3. Final fallback: query local DB by city for ANY session whose name
-      //    still hasn't resolved — covers SVP responses where site_id is null
-      //    AND where test_center carries a random/unmapped id. All sessions
-      //    sharing the same city resolve to that city's canonical center name.
+      // 3. Final fallback: query local DB by city only when that city maps to a
+      //    single configured center. Multi-center cities are ambiguous, so a
+      //    city-only guess would show the wrong center name/site_id.
       const cityMissing = Array.from(new Set(
         sessions
           .filter((s: any) => {
@@ -411,10 +410,16 @@ export default function BookingPage() {
       if (cityMissing.length) {
         const { data } = await supabase.from("test_centers").select("name, city").in("city", cityMissing);
         const byCity = new Map<string, string>();
+        const cityCounts = new Map<string, number>();
         data?.forEach((row: any) => {
           const c = String(row.city || "").trim().toLowerCase();
-          if (c && !byCity.has(c)) byCity.set(c, row.name);
+          if (!c) return;
+          cityCounts.set(c, (cityCounts.get(c) || 0) + 1);
+          if (!byCity.has(c)) byCity.set(c, row.name);
         });
+        for (const [city, count] of cityCounts) {
+          if (count !== 1) byCity.delete(city);
+        }
         sessions.forEach((s: any) => {
           const key = String(getCenterKey(s));
           const sessionKey = `session:${getSessionId(s)}`;
