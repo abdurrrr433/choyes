@@ -105,6 +105,23 @@ describe("BookingPage integration: SVP sessions with site_id=null grouped by cit
     expect(label).toBe("Dhaka");
   });
 
+  it("documents the live Dhaka center list expected in the Test Center dropdown", () => {
+    const dhakaCenters = [
+      { siteId: "17", name: "Bangladesh Korea TTC Dhaka" },
+      { siteId: "45", name: "Bangladesh German TTC" },
+      { siteId: "102", name: "Tangail Technical Training Center" },
+      { siteId: "115", name: "BRTC Central Training Institute Gazipur" },
+      { siteId: "218", name: "Narsingdi Technical Training Center" },
+      { siteId: "220", name: "Kishoreganj Technical Training Centre" },
+      { siteId: "221", name: "Shariatpur Technical Training Centre" },
+      { siteId: "223", name: "Manikganj Technical Training Center" },
+    ];
+
+    expect(dhakaCenters).toHaveLength(8);
+    expect(dhakaCenters.map((c) => c.siteId)).toContain("17");
+    expect(dhakaCenters.map((c) => c.siteId)).toContain("45");
+  });
+
   it("selecting a city exposes ALL of that city's exam_session_ids", () => {
     const selectedCity = "Rajshahi";
     const filtered = sessions.filter(

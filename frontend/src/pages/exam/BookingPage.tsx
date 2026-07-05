@@ -11,6 +11,40 @@ import {
   formatDateLabel, detectBookingMode, resolveSessionCenter, SectionCenterRule,
 } from "@/lib/booking-utils";
 
+const FALLBACK_TEST_CENTERS: { siteId: string; name: string; city: string }[] = [
+  { siteId: "17", name: "Bangladesh Korea TTC Dhaka", city: "Dhaka" },
+  { siteId: "45", name: "Bangladesh German TTC", city: "Dhaka" },
+  { siteId: "53", name: "Bangladesh Korea TTC Chattogram", city: "Chattogram" },
+  { siteId: "54", name: "Rajshahi Technical Training Centre", city: "Rajshahi" },
+  { siteId: "60", name: "Barishal Technical Training Center", city: "Barishal" },
+  { siteId: "62", name: "Cumilla Technical Training Centre", city: "Cumilla" },
+  { siteId: "68", name: "Nilphamari Technical Training Center", city: "Nilphamari" },
+  { siteId: "70", name: "Mymensingh Technical Training Centre", city: "Mymensingh" },
+  { siteId: "71", name: "Sylhet Technical Training Center", city: "Sylhet" },
+  { siteId: "102", name: "Tangail Technical Training Center", city: "Dhaka" },
+  { siteId: "107", name: "Bogura Technical Training Centre", city: "Rajshahi" },
+  { siteId: "115", name: "BRTC Central Training Institute Gazipur", city: "Dhaka" },
+  { siteId: "156", name: "Khulna Technical Training Centre", city: "Khulna" },
+  { siteId: "166", name: "Faridpur Technical Training Centre", city: "Barishal" },
+  { siteId: "171", name: "Jashore Technical Training Centre", city: "Khulna" },
+  { siteId: "174", name: "Brahmanbaria Technical Training Centre", city: "Cumilla" },
+  { siteId: "180", name: "Madaripur Technical Training Centre", city: "Barishal" },
+  { siteId: "181", name: "Narail Technical Training Centre", city: "Khulna" },
+  { siteId: "201", name: "Pabna Technical Training Centre", city: "Rajshahi" },
+  { siteId: "203", name: "Noakhali Technical Training Centre", city: "Cumilla" },
+  { siteId: "208", name: "Tangail Ttc", city: "Tangail" },
+  { siteId: "218", name: "Narsingdi Technical Training Center", city: "Dhaka" },
+  { siteId: "220", name: "Kishoreganj Technical Training Centre", city: "Dhaka" },
+  { siteId: "221", name: "Shariatpur Technical Training Centre", city: "Dhaka" },
+  { siteId: "223", name: "Manikganj Technical Training Center", city: "Dhaka" },
+  { siteId: "265", name: "Joypurhat Technical Training Center", city: "Rajshahi" },
+];
+
+function fallbackCentersForCity(city: string) {
+  const c = String(city || "").trim().toLowerCase();
+  return FALLBACK_TEST_CENTERS.filter((item) => item.city.toLowerCase() === c);
+}
+
 
 
 
@@ -123,6 +157,10 @@ export default function BookingPage() {
     () => filteredSessions.find((item) => String(getSessionId(item)) === String(sessionId)) || null,
     [filteredSessions, sessionId]
   );
+  const selectedCenterOption = useMemo(
+    () => centerOptions.find((item) => String(item.siteId) === String(selectedCenterId)) || null,
+    [centerOptions, selectedCenterId]
+  );
   const calendarBaseMonth = calendarMonth || (availableDate ? availableDate.slice(0, 7) : normalizeDateValue(new Date().toISOString()).slice(0, 7));
   const calendarCursorDate = useMemo(() => new Date(`${calendarBaseMonth}-01T00:00:00`), [calendarBaseMonth]);
   const calendarYear = calendarCursorDate.getFullYear();
@@ -213,18 +251,24 @@ export default function BookingPage() {
     let active = true;
     (async () => {
       if (!selectedCity) { setCityCenterOptions([]); return; }
+      const fallbackRows = fallbackCentersForCity(selectedCity);
       const { data } = await supabase
         .from("test_centers")
         .select("site_id, name, city")
         .eq("city", selectedCity)
         .order("name", { ascending: true });
       if (!active) return;
-      const rows = (data || []).map((row: any) => ({
-        siteId: String(row.site_id),
-        name: String(row.name || `Site #${row.site_id}`),
-        city: String(row.city || selectedCity),
-      }));
-      setCityCenterOptions(rows);
+      const merged = new Map<string, { siteId: string; name: string; city: string }>();
+      fallbackRows.forEach((row) => merged.set(row.siteId, row));
+      (data || []).forEach((row: any) => {
+        const siteId = String(row.site_id);
+        merged.set(siteId, {
+          siteId,
+          name: String(row.name || `Site #${row.site_id}`),
+          city: String(row.city || selectedCity),
+        });
+      });
+      setCityCenterOptions(Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name)));
     })();
     return () => { active = false; };
   }, [selectedCity]);
@@ -516,9 +560,8 @@ export default function BookingPage() {
   }, [filteredSessions, sessionId]);
 
   useEffect(() => {
-    const selectedCenter = centerOptions.find((item) => String(item.siteId) === String(selectedCenterId));
-    if (selectedCenter) { setSiteId(String(selectedCenter.siteId || "")); setSiteCity(String(selectedCenter.city || "")); }
-  }, [selectedCenterId, centerOptions]);
+    if (selectedCenterOption) { setSiteId(String(selectedCenterOption.siteId || "")); setSiteCity(String(selectedCenterOption.city || "")); }
+  }, [selectedCenterOption]);
 
   useEffect(() => {
     if (!selectedSession) return;
@@ -869,11 +912,14 @@ export default function BookingPage() {
               <option value="">{loadingSessions ? "Loading sessions..." : "Select session"}</option>
               {filteredSessions.map((item) => {
                 const sid = getSessionSiteId(item);
-                const realName = getResolvedSessionCenterName(item);
+                const exactCenterMatch = sid && String(sid) === String(selectedCenterId);
+                const realName = exactCenterMatch
+                  ? getResolvedSessionCenterName(item)
+                  : (selectedCenterOption?.name || getResolvedSessionCenterName(item));
                 const seats = item?.available_seats ?? item?.seats_available ?? item?.remaining_seats ?? null;
                 return (
                   <option key={getSessionId(item)} value={getSessionId(item)}>
-                    {realName} (Site #{sid}) | Session #{getSessionId(item)}{seats !== null && seats !== undefined ? ` | Seats: ${seats}` : ""}
+                    {realName}{exactCenterMatch && sid ? ` (Site #${sid})` : ""} | Session #{getSessionId(item)}{seats !== null && seats !== undefined ? ` | Seats: ${seats}` : ""}
                   </option>
                 );
               })}
@@ -900,7 +946,7 @@ export default function BookingPage() {
           <div><span>Test Center ID:</span> <strong>{
             extractTestCenterId(selectedSession) || extractTestCenterId(sessionDetail) || siteId || "-"
           }</strong></div>
-          <div><span>Test Center:</span> <strong>{selectedSession ? getResolvedSessionCenterName(selectedSession) : (centerOptions.find((c) => String(c.siteId) === String(selectedCenterId))?.name || "-")}</strong></div>
+          <div><span>Test Center:</span> <strong>{selectedCenterOption?.name || (selectedSession ? getResolvedSessionCenterName(selectedSession) : "-")}</strong></div>
           <div><span>Exam Session ID:</span> <strong>{sessionDetail?.id ? `#${sessionDetail.id}` : (sessionId ? `#${sessionId}` : "-")}</strong></div>
           <div><span>Session Status:</span> <strong>{loadingSeats ? "Loading..." : (sessionDetail?.status || "-")}</strong></div>
           <div><span>Hold ID:</span> <strong>{holdId || "-"}</strong></div>
