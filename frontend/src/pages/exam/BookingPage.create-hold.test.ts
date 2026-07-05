@@ -58,6 +58,11 @@ describe("BookingPage createHold — single-session hold (SVP wrong center fix)"
     expect(buildHoldSessionIds(encrypted)).toEqual([encrypted]);
   });
 
+  it("preserves screenshot-style t2hub encrypted exam-session ids", () => {
+    const encrypted = "#57pDq4THw==--Id8y92OLe+oKN9bs--pOVyIUUgdY3gD6b66pEliQ==";
+    expect(buildHoldSessionIds(encrypted)).toEqual([encrypted]);
+  });
+
   it("extracts nested live SVP exam_session ids for hold creation", () => {
     const selectedSession = {
       exam_session: {

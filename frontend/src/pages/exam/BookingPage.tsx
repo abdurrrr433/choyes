@@ -662,7 +662,7 @@ export default function BookingPage() {
     // Holding the whole city would let SVP confirm a different test center
     // when the booking POST is made with hold_id, because the hold covers
     // multiple distinct centers in the same city.
-    const selectedSessionId = getSessionPayloadId(sessionId);
+    const selectedSessionId = getSessionPayloadId(getSessionId(selectedSession) || sessionId);
     if (selectedSessionId === null) {
       setError("No valid exam session selected for hold creation");
       return;
