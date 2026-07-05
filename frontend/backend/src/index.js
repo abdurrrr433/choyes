@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { authRouter } from './routes/auth.js';
 import { svpRouter } from './routes/svp.js';
+import { createSupabaseAdmin, createSupabaseAnon, requireSupabaseEnv } from './lib/supabaseServer.js';
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -23,6 +24,7 @@ function validateEnv() {
   ];
 
   for (const key of required) requireEnv(key);
+  requireSupabaseEnv();
 }
 
 validateEnv();
@@ -104,6 +106,24 @@ app.get('/health', (_, res) => res.json({
   publicDomain: process.env.RAILWAY_PUBLIC_DOMAIN || null,
   service: process.env.RAILWAY_SERVICE_NAME || null,
 }));
+
+app.get('/health/supabase', async (_, res, next) => {
+  try {
+    const anon = createSupabaseAnon();
+    const admin = createSupabaseAdmin();
+    const authHealth = await anon.auth.getSession();
+    const adminHealth = await admin.auth.admin.listUsers({ page: 1, perPage: 1 });
+
+    res.json({
+      ok: !authHealth.error && !adminHealth.error,
+      project: process.env.SUPABASE_URL,
+      anonClient: authHealth.error ? { ok: false, message: authHealth.error.message } : { ok: true },
+      adminClient: adminHealth.error ? { ok: false, message: adminHealth.error.message } : { ok: true },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.get('/', (_, res) => res.json({
   ok: true,
