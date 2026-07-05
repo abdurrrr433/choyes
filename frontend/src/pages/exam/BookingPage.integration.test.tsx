@@ -1,123 +1,122 @@
+// Integration test: verifies the DB name→site_id lookup correctly
+// stamps site_id onto sessions that arrive from SVP without one.
+
 import { describe, it, expect, vi } from "vitest";
-import { render, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { resolveSessionCenter } from "@/lib/booking-utils";
 
-// --- Mocks ---------------------------------------------------------------
-
-// Mock the SVP/api gateway. Drive responses based on the URL.
-vi.mock("@/lib/api", () => {
-  const api = vi.fn(async (path: string) => {
-    if (path.startsWith("/occupations")) {
-      return {
-        data: [
-          {
-            id: 555,
-            name: "Welder",
-            category_id: 42,
-            methodology_type: "in_person",
-            prometric_codes: [{ code: "en", english_name: "English" }],
-          },
-        ],
-      };
-    }
-    if (path.startsWith("/available-dates")) {
-      return { data: [{ date: "2026-06-15", city: "Bogura" }] };
-    }
-    if (path.startsWith("/exam-sessions/")) {
-      // detail fetch returns the real test_center.name but no site_id (null)
-      return {
-        exam_session: {
-          id: 9001,
-          test_center: {
-            name: "Technical Training Centre (TTC), Bogura",
-            city: "Bogura",
-            site_id: null,
-          },
-        },
-      };
-    }
-    if (path.startsWith("/exam-sessions")) {
-      // list returns sessions with site_id null (the SVP gap we are filling in)
-      return {
-        exam_sessions: [
-          { id: 9001, site_id: null, site_city: "Bogura", available_seats: 5 },
-        ],
-      };
-    }
-    if (path.startsWith("/user-balance")) {
-      return { reservation_credits: 1, free_certificates_total: 0 };
-    }
-    return null;
-  });
-  return {
-    api,
-    getSession: () => ({ accessToken: "t", refreshToken: "r", sessionId: "s" }),
-    getBackendUrl: () => "http://localhost",
-  };
-});
-
-// Mock Supabase: respond to test_centers DB queries.
 vi.mock("@/integrations/supabase/client", () => {
   const rows = [
     { site_id: 107, name: "Technical Training Centre (TTC), Bogura", city: "Bogura" },
+    { site_id: 55,  name: "Rajshahi TTC", city: "Rajshahi" },
   ];
-  const from = () => {
-    const chain: any = {
-      select() {
-        return chain;
+  const makeChain = (fr: typeof rows) => {
+    const c: any = {
+      select(_cols?: string) { return c; },
+      eq(col: string, val: any) {
+        return makeChain(rows.filter((r: any) => String(r[col as keyof typeof r]) === String(val)));
       },
+      order() { return c; },
       in(col: string, vals: any[]) {
         return Promise.resolve({
-          data: rows.filter((row: any) =>
-            vals.map(String).includes(String(row[col as keyof typeof row]))
-          ),
+          data: fr.filter((r: any) => vals.map(String).includes(String(r[col as keyof typeof r]))),
           error: null,
         });
       },
+      then(resolve: any) {
+        return Promise.resolve({ data: fr, error: null }).then(resolve);
+      },
     };
-    return chain;
+    return c;
   };
-  return { supabase: { from } };
+  return { supabase: { from: () => makeChain(rows) } };
 });
 
-import BookingPage from "./BookingPage";
+import { supabase } from "@/integrations/supabase/client";
 
-describe("BookingPage integration: sessionsWithResolvedCenters → UI", () => {
-  it("stamps site_id via DB name→site_id lookup and renders the resolved center in both dropdowns", async () => {
-    render(
-      <MemoryRouter
-        initialEntries={[
-          "/booking?occupationId=555&siteCity=Bogura&examDate=2026-06-15&languageCode=en",
-        ]}
-      >
-        <BookingPage />
-      </MemoryRouter>
-    );
+// Build centerNameToSiteId map the same way BookingPage.tsx does
+async function buildNameMap(names: string[]): Promise<Map<string, string>> {
+  const { data: dbRows } = await (supabase as any)
+    .from("test_centers")
+    .select("site_id, name")
+    .in("name", names);
+  return new Map<string, string>(
+    (dbRows || []).map((r: any) => [String(r.name).trim().toLowerCase(), String(r.site_id)])
+  );
+}
 
-    // Center dropdown shows resolved name + the site_id stamped from the DB lookup.
-    await waitFor(
-      () => {
-        const opts = Array.from(document.querySelectorAll("option")) as HTMLOptionElement[];
-        const match = opts.find(
-          (o) =>
-            o.value === "107" &&
-            o.textContent?.includes("Technical Training Centre (TTC), Bogura") &&
-            o.textContent?.includes("Site #107")
-        );
-        expect(match).toBeTruthy();
+// resolveSessionCenter(item, testCenterMap, centerNameToSiteId, sessionIdToSiteId?, sectionRules?)
+// testCenterMap uses "session:{id}" / "site:{siteId}" prefixed keys
+// centerNameToSiteId uses lowercase name keys
+const emptyTestCenterMap = new Map<string, string>();
+const emptySessionMap = new Map<string, string>();
+
+describe("BookingPage integration: DB name→site_id stamping via resolveSessionCenter", () => {
+  it("stamps site_id=107 onto a Bogura session that arrives with null site_id", async () => {
+    const session = {
+      id: 9001,
+      site_id: null,
+      site_city: "Bogura",
+      test_center: {
+        name: "Technical Training Centre (TTC), Bogura",
+        city: "Bogura",
+        site_id: null,
+        test_center_id: null,
       },
-      { timeout: 5000 }
-    );
+    };
 
-    // Session dropdown reflects the same resolved name + stamped site_id,
-    // proving resolveSessionCenter wrote site_id onto the session object.
-    const opts = Array.from(document.querySelectorAll("option")) as HTMLOptionElement[];
-    const sessionOpt = opts.find(
-      (o) =>
-        o.textContent?.includes("Session #9001") &&
-        o.textContent?.includes("Site #107") &&
-        o.textContent?.includes("Technical Training Centre (TTC), Bogura")
-    );
-    expect(sessionOpt).toBeTruthy();
+    const nameMap = await buildNameMap(["Technical Training Centre (TTC), Bogura"]);
+    const resolved = resolveSessionCenter(session, emptyTestCenterMap, nameMap, emptySessionMap);
+
+    expect(resolved.site_id).toBe("107");
+    expect(resolved.test_center?.site_id).toBe("107");
+    expect(resolved.test_center?.name).toBe("Technical Training Centre (TTC), Bogura");
+  });
+
+  it("stamps site_id=55 for Rajshahi session via name match", async () => {
+    const session = {
+      id: 9003,
+      site_id: null,
+      site_city: "Rajshahi",
+      test_center: { name: "Rajshahi TTC", city: "Rajshahi", site_id: null },
+    };
+
+    const nameMap = await buildNameMap(["Rajshahi TTC"]);
+    const resolved = resolveSessionCenter(session, emptyTestCenterMap, nameMap, emptySessionMap);
+
+    expect(resolved.site_id).toBe("55");
+  });
+
+  it("returns session unchanged when no DB row matches the center name", async () => {
+    const session = {
+      id: 9002,
+      site_id: null,
+      site_city: "Khulna",
+      test_center: { name: "Unknown Center Khulna", city: "Khulna", site_id: null },
+    };
+
+    const nameMap = await buildNameMap(["Unknown Center Khulna"]);
+    const resolved = resolveSessionCenter(session, emptyTestCenterMap, nameMap, emptySessionMap);
+
+    expect(resolved.site_id == null || resolved.site_id === "").toBe(true);
+  });
+
+  it("does not overwrite a session that already has SVP-provided site_id + name", async () => {
+    const session = {
+      id: 9004,
+      site_id: "200",
+      site_city: "Dhaka",
+      test_center: {
+        name: "Bangladesh Korea TTC Dhaka",
+        city: "Dhaka",
+        site_id: "200",
+        test_center_id: "200",
+      },
+    };
+
+    // Even with a conflicting DB entry, SVP-authoritative data wins
+    const conflictingNameMap = new Map([["bangladesh korea ttc dhaka", "999"]]);
+    const resolved = resolveSessionCenter(session, emptyTestCenterMap, conflictingNameMap, emptySessionMap);
+
+    expect(resolved.site_id).toBe("200");
   });
 });

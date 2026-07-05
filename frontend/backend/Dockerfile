@@ -17,7 +17,7 @@ RUN apt-get update \
 COPY package*.json ./
 
 # Install all deps (including devDeps needed for prisma generate)
-RUN npm install
+RUN npm ci
 
 # ── Runtime stage ──────────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim AS runner
