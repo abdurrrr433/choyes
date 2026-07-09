@@ -6,7 +6,7 @@ export default defineConfig({
   timeout: 60000,
   use: {
     baseURL: process.env.E2E_BASE_URL || "http://localhost:3000",
-    headless: false,
+    headless: process.env.PW_HEADED === "1" ? false : true,
     viewport: { width: 1280, height: 720 },
     actionTimeout: 10000,
     ignoreHTTPSErrors: true,
