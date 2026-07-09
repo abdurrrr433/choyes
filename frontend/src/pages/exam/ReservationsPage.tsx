@@ -30,6 +30,86 @@ function getReservationId(item: any) { return value(item, ["id", "reservation_id
 function getOccupationId(item: any) { return item?.occupation?.id || value(item, ["occupation_id"]) || ""; }
 function getMethodology(item: any) { return value(item, ["methodology", "methodology_type"]) || "in_person"; }
 function getStatus(item: any) { return value(item, ["reservation_status", "status", "cbt_exam_status", "payment_status"]) || "Unknown"; }
+function getPaymentStatusRaw(item: any) {
+  const paymentCandidates = [
+    ...(Array.isArray(item?.payments) ? item.payments : []),
+    ...(Array.isArray(item?.payment_transactions) ? item.payment_transactions : []),
+    ...(Array.isArray(item?.transactions) ? item.transactions : []),
+    item?.latest_payment,
+    item?.payment,
+    item?.transaction,
+    item?.invoice,
+  ].filter(Boolean);
+
+  for (const payment of paymentCandidates) {
+    const status =
+      payment?.status ||
+      payment?.payment_status ||
+      payment?.result?.description ||
+      payment?.result?.code ||
+      payment?.response?.result?.description ||
+      payment?.response?.result?.code ||
+      payment?.raw?.result?.description ||
+      payment?.raw?.result?.code ||
+      "";
+    if (status) return String(status).trim();
+  }
+
+  return String(
+    item?.payment_status ||
+    value(item, ["payment_status", "paymentStatus", "pay_status", "paid_status"]) ||
+    ""
+  ).trim();
+}
+function getPaymentStatus(item: any) {
+  const reservationId = getReservationId(item);
+  const localStatus = reservationId ? localStorage.getItem(`paymentStatus:${reservationId}`) : "";
+  if (localStatus === "failed") return { type: "failed", label: "Payment failed" };
+  if (localStatus === "pending") return { type: "pending", label: "Payment pending" };
+  if (localStatus === "success") return { type: "paid", label: "Paid" };
+
+  const raw = getPaymentStatusRaw(item).toLowerCase();
+  const reservationStatus = String(getStatus(item) || "").toLowerCase();
+  const paidFlag = item?.paid === true || item?.is_paid === true || item?.payment?.paid === true;
+
+  if (/fail|failed|declin|reject|cancel|expired|void|error|not\s*successful|unsuccessful/.test(raw)) {
+    return { type: "failed", label: "Payment failed" };
+  }
+  if (paidFlag || /paid|success|successful|completed|confirmed|settled|captured/.test(raw)) {
+    return { type: "paid", label: "Paid" };
+  }
+  if (/pending|initiated|created|processing|unpaid|not_paid|payment_required/.test(raw)) {
+    return { type: "pending", label: "Payment pending" };
+  }
+  if (/unpaid|payment/.test(reservationStatus)) {
+    return { type: "pending", label: "Payment pending" };
+  }
+  return { type: "unknown", label: raw || "Unknown" };
+}
+function canPayReservation(item: any) {
+  const status = getPaymentStatus(item).type;
+  const reservationStatus = String(getStatus(item) || "").toLowerCase();
+  return status === "failed" || status === "pending" || (/unpaid|payment/.test(reservationStatus) && status !== "paid");
+}
+function readNumeric(payload: any, keys: string[]) {
+  for (const key of keys) {
+    const value = payload?.[key] ?? payload?.balance?.[key] ?? payload?.data?.[key] ?? payload?.data?.balance?.[key];
+    if (value !== undefined && value !== null && value !== "") {
+      const numberValue = Number(value);
+      if (Number.isFinite(numberValue)) return numberValue;
+    }
+  }
+  return 0;
+}
+function getCreditInfo(balance: any) {
+  const reservationCredits = readNumeric(balance, ["reservation_credits", "reservationCredits"]);
+  const freeCertificates = readNumeric(balance, ["free_certificates_total", "freeCertificatesTotal"]);
+  return {
+    reservationCredits,
+    freeCertificates,
+    hasCredit: reservationCredits > 0 || freeCertificates > 0,
+  };
+}
 function getDate(item: any) {
   return item?.exam_session?.test_date || item?.exam_session?.start_at_in_browser_time_zone || value(item, ["exam_date", "scheduled_at", "date", "examDay", "test_date", "start_at_in_browser_time_zone", "start_at"]) || "";
 }
@@ -62,6 +142,76 @@ function getSessionId(item: any) { return value(item, ["exam_session_id"]) || it
 function canReschedule(item: any) { return Boolean(item?.can_be_rescheduled); }
 function canCancel(item: any) { return Boolean(item?.can_be_canceled); }
 function getRescheduleReason(item: any) { return item?.cancellation_reason || item?.violation_reason || item?.reservation_status || ""; }
+function getFullName(item: any) {
+  return String(
+    item?.full_name ||
+    item?.user?.full_name ||
+    item?.individual_labor?.full_name ||
+    item?.labor?.full_name ||
+    item?.profile?.full_name ||
+    value(item, ["full_name", "name"]) ||
+    ""
+  ).trim();
+}
+function getOccupationName(item: any) {
+  return String(
+    item?.occupation?.english_name ||
+    item?.occupation?.name ||
+    item?.exam_session?.occupation?.english_name ||
+    item?.exam_session?.occupation?.name ||
+    value(item, ["occupation_name", "occupation_english_name"]) ||
+    getOccupationId(item) ||
+    ""
+  ).trim();
+}
+function sanitizeFilePart(value: string, fallback: string) {
+  const cleaned = String(value || "")
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || fallback;
+}
+function getTicketFileName(item: any, reservationId: string | number) {
+  const fullName = sanitizeFilePart(getFullName(item), "SVP User");
+  const occupationName = sanitizeFilePart(getOccupationName(item), "Occupation");
+  return `${fullName}_${occupationName}_Ticket_${reservationId}.pdf`;
+}
+function findUrlDeep(value: any, keys: string[]): string {
+  if (!value || typeof value !== "object") return "";
+  const queue = [value];
+  const wanted = new Set(keys.map((key) => key.toLowerCase()));
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    for (const [key, item] of Object.entries(current)) {
+      if (typeof item === "string" && wanted.has(key.toLowerCase()) && /^https?:\/\//i.test(item)) return item;
+      if (item && typeof item === "object") queue.push(item);
+    }
+  }
+  return "";
+}
+function findCheckoutIdDeep(value: any): string {
+  if (!value || typeof value !== "object") return "";
+  const queue: { value: any; parentKey: string }[] = [{ value, parentKey: "" }];
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current?.value || typeof current.value !== "object") continue;
+    for (const [key, item] of Object.entries(current.value)) {
+      const normalizedKey = key.toLowerCase();
+      if ((normalizedKey === "checkout_id" || normalizedKey === "checkoutid") && (typeof item === "string" || typeof item === "number")) return String(item);
+      if ((typeof item === "string" || typeof item === "number") && normalizedKey === "id") {
+        const raw = String(item);
+        if (current.parentKey.toLowerCase().includes("checkout") || /^[A-F0-9]{16,}\.[\w.-]+$/i.test(raw)) return raw;
+      }
+      if (typeof item === "string") {
+        const match = item.match(/[A-F0-9]{16,}\.[\w.-]+/i);
+        if (match) return match[0];
+      }
+      if (item && typeof item === "object") queue.push({ value: item, parentKey: key });
+    }
+  }
+  return "";
+}
 
 export default function ReservationsPage() {
   const navigate = useNavigate();
@@ -70,6 +220,8 @@ export default function ReservationsPage() {
   const [loadingId, setLoadingId] = useState("");
   const [cancellingId, setCancellingId] = useState("");
   const [downloadingId, setDownloadingId] = useState("");
+  const [payingId, setPayingId] = useState("");
+  const [creditByReservationId, setCreditByReservationId] = useState<Record<string, { reservationCredits: number; freeCertificates: number; hasCredit: boolean; checked: boolean }>>({});
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -79,12 +231,39 @@ export default function ReservationsPage() {
       const data = await api("/exam-reservations?locale=en");
       const reservations = pickArray(data);
       setItems(reservations);
+      void loadReservationCredits(reservations);
       if (!reservations.length) setError("No booked reservations found from the API for this account.");
     } catch (err: any) { setItems([]); setError(err?.message || "Failed to load booked reservations"); }
     finally { setLoading(false); }
   }
 
   useEffect(() => { loadReservations(); }, []);
+
+  async function loadReservationCredits(reservations: any[]) {
+    const entries = await Promise.all(
+      reservations.map(async (item) => {
+        const reservationId = String(getReservationId(item) || "");
+        const occupationId = String(getOccupationId(item) || "");
+        if (!reservationId || !occupationId) return null;
+        try {
+          const params = new URLSearchParams({
+            methodology_type: getMethodology(item),
+            occupation_id: occupationId,
+            locale: "en",
+          });
+          const balance = await api(`/user-balance?${params.toString()}`);
+          return [reservationId, { ...getCreditInfo(balance), checked: true }] as const;
+        } catch {
+          return [reservationId, { reservationCredits: 0, freeCertificates: 0, hasCredit: false, checked: true }] as const;
+        }
+      })
+    );
+    const next: Record<string, { reservationCredits: number; freeCertificates: number; hasCredit: boolean; checked: boolean }> = {};
+    entries.forEach((entry) => {
+      if (entry) next[entry[0]] = entry[1];
+    });
+    setCreditByReservationId(next);
+  }
 
   async function startReschedule(item: any) {
     const reservationId = getReservationId(item);
@@ -148,10 +327,7 @@ export default function ReservationsPage() {
       });
       if (!response.ok) { throw new Error(await response.text() || "Failed to download ticket PDF"); }
       const contentType = response.headers.get("content-type") || "";
-      const disposition = response.headers.get("content-disposition") || "";
-      const fallbackFileName = `ticket-${reservationId}.pdf`;
-      const fileNameMatch = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
-      const fileName = fileNameMatch ? decodeURIComponent(fileNameMatch[1]) : fallbackFileName;
+      const fileName = getTicketFileName(item, reservationId);
       const triggerDownload = (href: string, name: string) => {
         const anchor = document.createElement("a"); anchor.href = href; anchor.download = name;
         document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
@@ -160,7 +336,7 @@ export default function ReservationsPage() {
         const data = await response.json();
         const url = data?.url || data?.pdf_url || data?.data?.url || data?.data?.pdf_url;
         if (!url) throw new Error("Ticket PDF URL not found in response");
-        triggerDownload(String(url), fallbackFileName); return;
+        triggerDownload(String(url), fileName); return;
       }
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
@@ -168,6 +344,53 @@ export default function ReservationsPage() {
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
     } catch (err: any) { setError(err?.message || "Failed to download ticket"); }
     finally { setDownloadingId(""); }
+  }
+
+  async function startPayment(item: any) {
+    const reservationId = getReservationId(item);
+    if (!reservationId) { setError("Missing reservation ID for payment"); return; }
+    const creditInfo = creditByReservationId[String(reservationId)];
+    if (creditInfo?.hasCredit) {
+      setError("Reservation credit is available for this booking. Payment is not required.");
+      return;
+    }
+    setPayingId(String(reservationId)); setError(""); setSuccess("");
+    try {
+      try {
+        await api("/payments-validate-pending?locale=en");
+      } catch (err: any) {
+        console.warn("payments/validate_pending failed before retry payment (continuing):", err?.message);
+      }
+
+      const paymentData: any = await api("/payments", {
+        method: "POST",
+        body: {
+          payment: {
+            payment_method: "card",
+            payable_type: "Reservation",
+            payable_id: Number(reservationId),
+          },
+        },
+      });
+
+      const paymentUrl = findUrlDeep(paymentData, ["checkout_url", "checkoutUrl", "payment_url", "paymentUrl", "redirect_url", "redirectUrl", "url"]);
+      if (paymentUrl) {
+        window.open(paymentUrl, "_blank", "noopener,noreferrer");
+        setSuccess(`Payment page opened for reservation #${reservationId}.`);
+        return;
+      }
+
+      const checkoutId = findCheckoutIdDeep(paymentData);
+      if (!checkoutId) throw new Error("Payment session was created, but no checkout ID was returned.");
+      const resultUrl = `${window.location.origin}/exam/payment/result?reservationId=${encodeURIComponent(String(reservationId))}`;
+      const params = new URLSearchParams({ checkoutId, reservationId: String(reservationId), resultUrl });
+      window.open(`/exam/payment?${params.toString()}`, "_blank", "noopener,noreferrer");
+      setSuccess(`Payment page opened for reservation #${reservationId}.`);
+    } catch (err: any) {
+      setError(err?.message || "Failed to start payment");
+    } finally {
+      setPayingId("");
+    }
   }
 
   return (
@@ -198,6 +421,10 @@ export default function ReservationsPage() {
           {items.map((item) => {
             const rid = getReservationId(item);
             const sid = getSessionId(item);
+            const paymentStatus = getPaymentStatus(item);
+            const creditInfo = creditByReservationId[String(rid || "")];
+            const creditAvailable = Boolean(creditInfo?.hasCredit);
+            const showPayButton = canPayReservation(item) && !creditAvailable;
             return (
               <div className="reservation-card" key={String(rid || sid || "reservation-item")}>
                 <div className="reservation-top">
@@ -212,7 +439,30 @@ export default function ReservationsPage() {
                   <div><span>Language</span><strong>{getLanguageCode(item)}</strong></div>
                   <div><span>Site ID</span><strong>{getSiteId(item) || "-"}</strong></div>
                   <div><span>Methodology</span><strong>{getMethodology(item) || "-"}</strong></div>
+                  <div>
+                    <span>Reservation Credits</span>
+                    <strong>{creditInfo?.checked ? creditInfo.reservationCredits : "Checking..."}</strong>
+                  </div>
+                  <div>
+                    <span>Payment</span>
+                    <strong style={{
+                      color: creditAvailable || paymentStatus.type === "paid" ? "#15803d" : paymentStatus.type === "failed" ? "#b91c1c" : "#92400e",
+                    }}>
+                      {creditAvailable ? "Credit available" : paymentStatus.label}
+                    </strong>
+                  </div>
                 </div>
+                {showPayButton ? (
+                  <button className="primary-btn" type="button" onClick={() => startPayment(item)}
+                    disabled={payingId === String(rid)} style={{ marginBottom: "10px", width: "100%" }}>
+                    {payingId === String(rid) ? "Opening payment..." : paymentStatus.type === "failed" ? "Retry Payment" : "Pay Now"}
+                  </button>
+                ) : null}
+                {creditAvailable && canPayReservation(item) ? (
+                  <small style={{ display: "block", margin: "0 0 10px", color: "#15803d", fontWeight: 700 }}>
+                    Reservation credit available. Pay Now is hidden.
+                  </small>
+                ) : null}
                 <button className="primary-btn" type="button" onClick={() => startReschedule(item)}
                   disabled={loadingId === String(rid) || !canReschedule(item)}>
                   {loadingId === String(rid) ? "Opening..." : canReschedule(item) ? "Reschedule" : "Reschedule unavailable"}

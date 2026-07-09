@@ -10,8 +10,17 @@ export default function AccessLoginPage() {
   const navigate = useNavigate();
   const { login } = useAccessAuth();
 
+  function openYopmailInbox(value: string) {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!normalized.endsWith("@yopmail.com")) return;
+    const mailbox = normalized.slice(0, -"@yopmail.com".length);
+    if (!mailbox) return;
+    window.open(`https://yopmail.com/?${encodeURIComponent(mailbox)}`, "_blank", "noopener,noreferrer");
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    openYopmailInbox(email);
     setLoading(true);
     setMsg("");
     try {

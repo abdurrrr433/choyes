@@ -11,6 +11,8 @@ import LoginPage from "@/pages/auth/LoginPage";
 import OtpPage from "@/pages/auth/OtpPage";
 import DashboardPage from "@/pages/DashboardPage";
 import BookingPage from "@/pages/exam/BookingPage";
+import PaymentPage from "@/pages/exam/PaymentPage";
+import PaymentResultPage from "@/pages/exam/PaymentResultPage";
 import ReservationsPage from "@/pages/exam/ReservationsPage";
 import AccessLoginPage from "@/pages/access/AccessLoginPage";
 import ForgotPasswordPage from "@/pages/access/ForgotPasswordPage";
@@ -42,6 +44,8 @@ const App = () => (
               <Route path="/user" element={<Navigate to="/auth/login" replace />} />
               <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
               <Route path="/exam/booking" element={<ProtectedRoute><BookingPage /></ProtectedRoute>} />
+              <Route path="/exam/payment" element={<ProtectedRoute><PaymentPage /></ProtectedRoute>} />
+              <Route path="/exam/payment/result" element={<ProtectedRoute><PaymentResultPage /></ProtectedRoute>} />
               <Route path="/exam/reservations" element={<ProtectedRoute><ReservationsPage /></ProtectedRoute>} />
               <Route path="/exam/test-centers/:id" element={<ProtectedRoute><TestCenterDetailPage /></ProtectedRoute>} />
 

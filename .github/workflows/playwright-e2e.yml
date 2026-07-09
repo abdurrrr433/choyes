@@ -27,12 +27,6 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps
 
-      - name: Start Vite dev server
-        working-directory: frontend
-        run: |
-          npm run dev &
-          npx wait-on http://localhost:3000
-
       - name: Run Playwright tests
         working-directory: frontend
         env:

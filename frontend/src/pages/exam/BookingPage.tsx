@@ -75,6 +75,7 @@ export default function BookingPage() {
   const [languageCode, setLanguageCode] = useState("");
   const [holdId, setHoldId] = useState("");
   const [reservationId, setReservationId] = useState("");
+  const [paymentSession, setPaymentSession] = useState<{ reservationId: string; url: string; checkoutId: string; resultUrl: string } | null>(null);
   const [loadingOccupations, setLoadingOccupations] = useState(false);
   const [loadingDates, setLoadingDates] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -114,16 +115,28 @@ export default function BookingPage() {
   const centerOptions = useMemo(() => {
     const options = buildCenterOptions(sessionsWithResolvedCenters);
     const merged = new Map<string, { siteId: string; name: string; city: string }>();
-    // Enrich with real test center names from the map
+    const sessionBackedSiteIds = new Set(options.map((opt) => String(opt.siteId)));
+
+    // When sessions are loaded, the dropdown must only contain centers that
+    // actually have available sessions. Otherwise a city-wide t2hub center list
+    // can auto-select a center with no matching session and make the Exam
+    // Session dropdown look broken. Use cityCenterOptions only to enrich the
+    // matching session-backed center name, or as a pre-session fallback.
+    const hasSessionBackedCenters = options.length > 0;
     const hasCityDbCenters = cityCenterOptions.length > 0;
     options.forEach((opt) => {
       if (hasCityDbCenters && String(opt.siteId).startsWith("city:")) return;
+      const liveCenter = cityCenterOptions.find((item) => String(item.siteId) === String(opt.siteId));
       merged.set(String(opt.siteId), {
         ...opt,
-        name: testCenterMap.get(opt.siteId) || opt.name,
+        name: liveCenter?.name || testCenterMap.get(opt.siteId) || opt.name,
+        city: liveCenter?.city || opt.city,
       });
     });
-    cityCenterOptions.forEach((opt) => merged.set(String(opt.siteId), opt));
+    cityCenterOptions.forEach((opt) => {
+      if (hasSessionBackedCenters && !sessionBackedSiteIds.has(String(opt.siteId))) return;
+      merged.set(String(opt.siteId), opt);
+    });
     return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [sessionsWithResolvedCenters, testCenterMap, cityCenterOptions]);
   const getResolvedSessionCenterName = (item: any) => {
@@ -196,6 +209,305 @@ export default function BookingPage() {
     return raw;
   }
 
+  function findUrlDeep(value: any, keys: string[]): string {
+    if (!value || typeof value !== "object") return "";
+    const queue = [value];
+    const wanted = new Set(keys.map((key) => key.toLowerCase()));
+
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object") continue;
+
+      for (const [key, item] of Object.entries(current)) {
+        if (typeof item === "string") {
+          const normalizedKey = key.toLowerCase();
+          if (wanted.has(normalizedKey) && /^https?:\/\//i.test(item)) return item;
+        } else if (item && typeof item === "object") {
+          queue.push(item);
+        }
+      }
+    }
+
+    return "";
+  }
+
+  function findValueDeep(value: any, keys: string[]): string {
+    if (!value || typeof value !== "object") return "";
+    const queue = [value];
+    const wanted = new Set(keys.map((key) => key.toLowerCase()));
+
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object") continue;
+
+      for (const [key, item] of Object.entries(current)) {
+        if (wanted.has(key.toLowerCase()) && (typeof item === "string" || typeof item === "number")) {
+          return String(item);
+        }
+        if (item && typeof item === "object") queue.push(item);
+      }
+    }
+
+    return "";
+  }
+
+  function findCheckoutIdDeep(value: any): string {
+    if (!value || typeof value !== "object") return "";
+    const direct = findValueDeep(value, ["checkout_id", "checkoutId", "checkout_id_value", "checkoutIdValue"]);
+    if (direct) return direct;
+
+    const queue: { value: any; parentKey: string }[] = [{ value, parentKey: "" }];
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current?.value || typeof current.value !== "object") continue;
+
+      for (const [key, item] of Object.entries(current.value)) {
+        if ((typeof item === "string" || typeof item === "number") && key.toLowerCase() === "id") {
+          const parentKey = current.parentKey.toLowerCase();
+          const raw = String(item);
+          if (parentKey.includes("checkout") || /^[A-F0-9]{16,}\.[\w.-]+$/i.test(raw)) return raw;
+        }
+        if (typeof item === "string") {
+          const match = item.match(/[A-F0-9]{16,}\.[\w.-]+/i);
+          if (match) return match[0];
+        }
+        if (item && typeof item === "object") queue.push({ value: item, parentKey: key });
+      }
+    }
+
+    return "";
+  }
+
+  function getPaymentUrl(paymentData: any): string {
+    return findUrlDeep(paymentData, [
+      "checkout_url",
+      "checkoutUrl",
+      "payment_url",
+      "paymentUrl",
+      "redirect_url",
+      "redirectUrl",
+      "url",
+    ]);
+  }
+
+  function getPaymentResultUrl(paymentData: any): string {
+    return findUrlDeep(paymentData, [
+      "result_url",
+      "resultUrl",
+      "shopper_result_url",
+      "shopperResultUrl",
+      "return_url",
+      "returnUrl",
+    ]);
+  }
+
+  function openPaymentSession(session: { reservationId: string; url: string; checkoutId: string; resultUrl: string }) {
+    if (session.url) {
+      window.open(session.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (session.checkoutId) {
+      const resultUrl = session.resultUrl || `${window.location.origin}/exam/payment/result?reservationId=${encodeURIComponent(session.reservationId)}`;
+      const params = new URLSearchParams({
+        checkoutId: session.checkoutId,
+        reservationId: session.reservationId,
+        resultUrl,
+      });
+      window.open(`/exam/payment?${params.toString()}`, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  function sanitizeFilePart(value: string, fallback: string) {
+    const cleaned = String(value || "")
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return cleaned || fallback;
+  }
+
+  function getReservationFullName(item: any): string {
+    return String(
+      item?.full_name ||
+      item?.user?.full_name ||
+      item?.individual_labor?.full_name ||
+      item?.labor?.full_name ||
+      item?.profile?.full_name ||
+      item?.data?.full_name ||
+      ""
+    ).trim();
+  }
+
+  function getReservationOccupationName(item: any): string {
+    return String(
+      item?.occupation?.english_name ||
+      item?.occupation?.name ||
+      item?.exam_session?.occupation?.english_name ||
+      item?.exam_session?.occupation?.name ||
+      item?.occupation_name ||
+      item?.occupation_english_name ||
+      selectedOccupation?.name ||
+      selectedOccupationId ||
+      ""
+    ).trim();
+  }
+
+  async function getTicketFileName(nextReservationId: string) {
+    let reservation: any = null;
+    try {
+      reservation = await api(`/exam-reservations/${encodeURIComponent(nextReservationId)}?locale=en`);
+      reservation = reservation?.data || reservation?.exam_reservation || reservation?.reservation || reservation;
+    } catch {
+      reservation = null;
+    }
+
+    const fullName = sanitizeFilePart(getReservationFullName(reservation), "SVP User");
+    const occupationName = sanitizeFilePart(getReservationOccupationName(reservation), "Occupation");
+    return `${fullName}_${occupationName}_Ticket_${nextReservationId}.pdf`;
+  }
+
+  function getSessionDateTimeRaw(item: any): string {
+    const deep = findSessionValueDeep(item, [
+      "start_at_in_tc_time_zone",
+      "start_date_in_tc_time_zone",
+      "start_at_in_browser_time_zone",
+      "start_date_in_browser_time_zone",
+      "start_at",
+      "scheduled_at",
+      "test_date_time",
+      "exam_date_time",
+      "datetime",
+      "date_time",
+    ]);
+    if (deep) return deep;
+
+    return String(
+      item?.start_at_in_tc_time_zone ||
+      item?.start_date_in_tc_time_zone ||
+      item?.start_at_in_browser_time_zone ||
+      item?.start_date_in_browser_time_zone ||
+      item?.start_at ||
+      item?.scheduled_at ||
+      item?.test_date_time ||
+      item?.exam_date_time ||
+      item?.exam_session?.start_at_in_tc_time_zone ||
+      item?.exam_session?.start_at_in_browser_time_zone ||
+      item?.exam_session?.start_at ||
+      ""
+    ).trim();
+  }
+
+  function getSessionTimeRaw(item: any): string {
+    const deep = findSessionValueDeep(item, [
+      "start_time",
+      "test_time",
+      "exam_time",
+      "session_time",
+      "time",
+      "start_time_in_browser_time_zone",
+      "start_time_in_tc_time_zone",
+      "exam_start_time",
+      "test_start_time",
+    ]);
+    if (deep) return deep;
+
+    return String(
+      item?.start_time ||
+      item?.test_time ||
+      item?.exam_time ||
+      item?.time ||
+      item?.exam_session?.start_time ||
+      item?.exam_session?.test_time ||
+      ""
+    ).trim();
+  }
+
+  function findSessionValueDeep(value: any, keys: string[]): string {
+    if (!value || typeof value !== "object") return "";
+    const wanted = new Set(keys.map((key) => key.toLowerCase()));
+    const queue = [value];
+    const seen = new Set<any>();
+
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object" || seen.has(current)) continue;
+      seen.add(current);
+
+      for (const [key, item] of Object.entries(current)) {
+        if (wanted.has(key.toLowerCase()) && (typeof item === "string" || typeof item === "number")) {
+          const text = String(item).trim();
+          if (text) return text;
+        }
+        if (item && typeof item === "object") queue.push(item);
+      }
+    }
+    return "";
+  }
+
+  function findSessionTimeInText(value: any): string {
+    if (!value || typeof value !== "object") return "";
+    const queue = [value];
+    const seen = new Set<any>();
+    const timePattern = /\b(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\s*(?:AM|PM)?\b|\b(?:1[0-2]|0?[1-9])\s*(?:AM|PM)\b/i;
+
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object" || seen.has(current)) continue;
+      seen.add(current);
+
+      for (const item of Object.values(current)) {
+        if (typeof item === "string") {
+          const match = item.match(timePattern);
+          if (match) return match[0];
+        } else if (item && typeof item === "object") {
+          queue.push(item);
+        }
+      }
+    }
+    return "";
+  }
+
+  function formatSessionDateTime(item: any): string {
+    const dateTimeRaw = getSessionDateTimeRaw(item);
+    const timezoneOffset = String(item?.tc_time_zone_offset || item?.exam_session?.tc_time_zone_offset || "").trim();
+    if (dateTimeRaw) {
+      const normalizedDateTime = dateTimeRaw.replace(" ", "T");
+      const parsed = new Date(normalizedDateTime);
+      if (!Number.isNaN(parsed.getTime())) {
+        const label = parsed.toLocaleString("en-US", {
+          month: "2-digit",
+          day: "2-digit",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        });
+        return timezoneOffset ? `${label} (${timezoneOffset})` : label;
+      }
+      return timezoneOffset ? `${dateTimeRaw} (${timezoneOffset})` : dateTimeRaw;
+    }
+
+    const deepDate = findSessionValueDeep(item, ["test_date", "exam_date", "date", "start_at_date", "session_date"]);
+    const dateRaw = normalizeDateValue(String(deepDate || availableDate || ""));
+    const timeRaw = getSessionTimeRaw(item) || findSessionTimeInText(item);
+    if (!dateRaw && !timeRaw) return "";
+
+    const formattedDate = dateRaw
+      ? new Date(`${dateRaw}T00:00:00`).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })
+      : "";
+    let formattedTime = timeRaw;
+    const timeMatch = timeRaw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+    if (timeMatch) {
+      const hours = Number(timeMatch[1]);
+      const minutes = Number(timeMatch[2]);
+      const suffix = timeMatch[3]?.toUpperCase();
+      const date = new Date();
+      date.setHours(suffix === "PM" && hours < 12 ? hours + 12 : suffix === "AM" && hours === 12 ? 0 : hours, minutes, 0, 0);
+      formattedTime = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    }
+    const label = [formattedDate, formattedTime].filter(Boolean).join(" ");
+    return label && timezoneOffset ? `${label} (${timezoneOffset})` : label;
+  }
+
   useEffect(() => {
     (async () => {
       setLoadingOccupations(true); setError("");
@@ -246,11 +558,13 @@ export default function BookingPage() {
     setMethodology(String(selectedOccupation.methodology || "in_person"));
     setSelectedCity(""); setAvailableDate(""); setAvailableDateEntries([]); setSessions([]);
     setSelectedCenterId(""); setSessionId(""); setHoldId(""); setReservationId("");
+    setPaymentSession(null);
   }, [selectedOccupation]);
 
   useEffect(() => {
     setAvailableDate(""); setSessions([]); setSelectedCenterId(""); setSessionId("");
     setSiteId(""); setSiteCity(selectedCity || ""); setHoldId(""); setReservationId("");
+    setPaymentSession(null);
     if (selectedCity) setStatus(`City selected: ${selectedCity}. Loading sessions for the selected date.`);
   }, [selectedCity]);
 
@@ -773,10 +1087,58 @@ export default function BookingPage() {
           }
         }
         setStatus(nextReservationId ? `Reservation confirmed: #${nextReservationId}` : "Reservation created");
-        if (nextReservationId) await openTicketPdf(String(nextReservationId));
+        if (nextReservationId) {
+          if (bookingMode.type === "paid") {
+            await openPaymentPage(String(nextReservationId));
+          } else {
+            await openTicketPdf(String(nextReservationId));
+          }
+        }
       }
     } catch (err: any) { setError(err?.message || "Failed to book reservation"); }
     finally { setBooking(false); }
+  }
+
+  async function openPaymentPage(nextReservationId: string) {
+    setStatus(`Reservation confirmed: #${nextReservationId}. Opening official payment page...`);
+
+    try {
+      await api("/payments-validate-pending?locale=en");
+    } catch (err: any) {
+      console.warn("payments/validate_pending failed before payment creation (continuing):", err?.message);
+    }
+
+    const paymentData: any = await api("/payments", {
+      method: "POST",
+      body: {
+        payment: {
+          payment_method: "card",
+          payable_type: "Reservation",
+          payable_id: Number(nextReservationId),
+        },
+      },
+    });
+
+    const paymentUrl = getPaymentUrl(paymentData);
+    const checkoutId = findCheckoutIdDeep(paymentData);
+    const resultUrl = getPaymentResultUrl(paymentData) || `${window.location.origin}/exam/payment/result?reservationId=${encodeURIComponent(nextReservationId)}`;
+    const nextPaymentSession = {
+      reservationId: nextReservationId,
+      url: paymentUrl,
+      checkoutId,
+      resultUrl,
+    };
+    setPaymentSession(paymentUrl || checkoutId ? nextPaymentSession : null);
+
+    if (paymentUrl || checkoutId) {
+      openPaymentSession(nextPaymentSession);
+      setStatus(`Reservation confirmed: #${nextReservationId}. Complete payment in the payment tab.`);
+      return;
+    }
+
+    setStatus(
+      `Reservation confirmed: #${nextReservationId}. Payment could not be opened because no official payment URL or checkout ID was returned.`
+    );
   }
 
   async function openTicketPdf(nextReservationId: string) {
@@ -787,10 +1149,7 @@ export default function BookingPage() {
     });
     if (!response.ok) { throw new Error(await response.text() || "Failed to open ticket PDF"); }
     const contentType = response.headers.get("content-type") || "";
-    const disposition = response.headers.get("content-disposition") || "";
-    const fileNameMatch = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
-    const fallbackFileName = `ticket-${nextReservationId}.pdf`;
-    const fileName = fileNameMatch ? decodeURIComponent(fileNameMatch[1]) : fallbackFileName;
+    const fileName = await getTicketFileName(nextReservationId);
     function triggerDownload(href: string, name: string) {
       const anchor = document.createElement("a"); anchor.href = href; anchor.download = name;
       document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
@@ -798,7 +1157,7 @@ export default function BookingPage() {
     if (contentType.includes("application/json")) {
       const data = await response.json();
       const url = data?.url || data?.pdf_url || data?.data?.url || data?.data?.pdf_url;
-      if (url) { triggerDownload(String(url), fallbackFileName); return; }
+      if (url) { triggerDownload(String(url), fileName); return; }
       throw new Error("Ticket PDF URL not found in response");
     }
     const blob = await response.blob();
@@ -941,9 +1300,10 @@ export default function BookingPage() {
                 const sid = getSessionSiteId(item);
                 const realName = getResolvedSessionCenterName(item);
                 const seats = item?.available_seats ?? item?.seats_available ?? item?.remaining_seats ?? null;
+                const dateTimeLabel = formatSessionDateTime(item);
                 return (
                   <option key={getSessionId(item)} value={getSessionId(item)}>
-                    {realName}{sid ? ` (Site #${sid})` : ""} | Session #{getSessionId(item)}{seats !== null && seats !== undefined ? ` | Seats: ${seats}` : ""}
+                    {realName}{sid ? ` (Site #${sid})` : ""}{dateTimeLabel ? ` | ${dateTimeLabel}` : ""}{seats !== null && seats !== undefined ? ` | Seats: ${seats}` : ""}
                   </option>
                 );
               })}
@@ -971,7 +1331,6 @@ export default function BookingPage() {
             extractTestCenterId(selectedSession) || extractTestCenterId(sessionDetail) || siteId || "-"
           }</strong></div>
           <div><span>Test Center:</span> <strong>{selectedSession ? getResolvedSessionCenterName(selectedSession) : (selectedCenterOption?.name || "-")}</strong></div>
-          <div><span>Exam Session ID:</span> <strong>{sessionDetail?.id ? `#${sessionDetail.id}` : (sessionId ? `#${sessionId}` : "-")}</strong></div>
           <div><span>Session Status:</span> <strong>{loadingSeats ? "Loading..." : (sessionDetail?.status || "-")}</strong></div>
           <div><span>Hold ID:</span> <strong>{holdId || "-"}</strong></div>
           <div><span>Booking No:</span> <strong>{reservationId || "-"}</strong></div>
@@ -981,6 +1340,11 @@ export default function BookingPage() {
           <button className="ghost-btn" type="button" onClick={createHold} disabled={creatingHold || !sessionId}>
             {creatingHold ? "Creating hold..." : "Create Hold"}
           </button>
+          {paymentSession ? (
+            <button className="primary-btn" type="button" onClick={() => openPaymentSession(paymentSession)}>
+              Pay Now
+            </button>
+          ) : null}
           {searchParams.get("reschedule") === "1" ? (
             <button className="primary-btn" type="button" onClick={() => setShowRescheduleConfirm(true)} disabled={booking || !sessionId}>
               {booking ? "Confirming..." : "Confirm Reschedule"}
