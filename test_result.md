@@ -207,6 +207,45 @@ frontend:
             Also fixed Vite "host not allowed" error for the preview domain:
               - vite.config.ts now sets `server.allowedHosts: true`.
 
+  - task: "Access Control (Admin + Agency) Dashboard redesign + account system check"
+    implemented: true
+    working: true
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: |
+          Live verification completed against Supabase project qdlqrsvkenalwhmfdbaf.
+
+          Vitest: 80/81 tests passed. The only failure was the pre-existing
+          src/pages/exam/BookingPage.integration.test.tsx Supabase mock failure
+          (`.eq is not a function`), which is unrelated to this redesign.
+
+          Build: `yarn build` completed successfully with exit code 0, generated
+          dist/, and reported no TypeScript errors.
+
+          Admin dashboard: all 10 assertions passed. Live login redirected to
+          /access/dashboard; all admin navigation links, ADMIN role chip, Super Admin
+          identity, adaptive hero copy, 4 stat cards, 3 infrastructure cards, and real
+          account rows rendered. Hero height was 316.69px (< 400px), confirming the
+          ring-inflation fix. No console errors referenced access-dashboard-premium.css
+          or AccessDashboardPage.tsx.
+
+          Agency dashboard: all 7 assertions passed. Live login redirected to
+          /access/dashboard; only Dashboard and My Users were shown, admin-only links
+          remained hidden, the AGENCY role chip and adaptive hero copy rendered, and
+          4 stat cards plus 2 real agency-user rows loaded. No console errors occurred.
+
+          Account system: /access/accounts loaded successfully with 14 real rows.
+          The legacy light theme on that sub-page remains intentional.
+
+          Low-priority labor dashboard check did not detect `.dp-shell`; this belongs
+          to a separate previous feature and does not block the Access Control release.
+
+          Conclusion: Access Control dashboard redesign and account system are ready
+          for production. No source files were changed during verification.
+
 metadata:
   created_by: "main_agent"
   version: "1.1"

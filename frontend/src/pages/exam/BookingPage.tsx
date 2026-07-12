@@ -351,17 +351,42 @@ export default function BookingPage() {
     ).trim();
   }
 
-  async function getTicketFileName(nextReservationId: string) {
-    let reservation: any = null;
+  async function getTicketFileName(nextReservationId: string, reservationHint?: any) {
+    const candidates: any[] = [];
+    const addCandidate = (value: any) => {
+      if (!value) return;
+      candidates.push(value?.data || value?.exam_reservation || value?.reservation || value);
+    };
+
+    addCandidate(reservationHint);
     try {
-      reservation = await api(`/exam-reservations/${encodeURIComponent(nextReservationId)}?locale=en`);
-      reservation = reservation?.data || reservation?.exam_reservation || reservation?.reservation || reservation;
+      addCandidate(await api(`/exam-reservations/${encodeURIComponent(nextReservationId)}?locale=en`));
     } catch {
-      reservation = null;
+      // Some SVP deployments do not expose a reservation detail route. The list
+      // endpoint below is also what My Bookings uses, so it is the authoritative
+      // fallback for the user's name and occupation shown in its PDF filename.
     }
 
-    const fullName = sanitizeFilePart(getReservationFullName(reservation), "SVP User");
-    const occupationName = sanitizeFilePart(getReservationOccupationName(reservation), "Occupation");
+    if (!candidates.some((item) => getReservationFullName(item))) {
+      try {
+        const listPayload = await api("/exam-reservations?locale=en");
+        const listReservation = pickArray(listPayload).find((item) =>
+          String(extractId(item, ["id", "reservation_id", "exam_reservation_id"])) === String(nextReservationId)
+        );
+        addCandidate(listReservation);
+      } catch {
+        // Keep the creation/detail response and safe filename fallbacks.
+      }
+    }
+
+    const fullName = sanitizeFilePart(
+      candidates.map(getReservationFullName).find(Boolean) || "",
+      "SVP User"
+    );
+    const occupationName = sanitizeFilePart(
+      candidates.map(getReservationOccupationName).find(Boolean) || "",
+      "Occupation"
+    );
     return `${fullName}_${occupationName}_Ticket_${nextReservationId}.pdf`;
   }
 
@@ -1044,7 +1069,7 @@ export default function BookingPage() {
         const nextReservationId = extractId(data, ["id", "reservation_id", "exam_reservation_id"]) || oldReservationId;
         setReservationId(String(nextReservationId || ""));
         setStatus(`Reservation rescheduled successfully: #${nextReservationId}`);
-        if (nextReservationId) await openTicketPdf(String(nextReservationId));
+        if (nextReservationId) await openTicketPdf(String(nextReservationId), data);
       } else {
         // Normal new booking.
         //
@@ -1091,7 +1116,7 @@ export default function BookingPage() {
           if (bookingMode.type === "paid") {
             await openPaymentPage(String(nextReservationId));
           } else {
-            await openTicketPdf(String(nextReservationId));
+            await openTicketPdf(String(nextReservationId), data);
           }
         }
       }
@@ -1141,7 +1166,7 @@ export default function BookingPage() {
     );
   }
 
-  async function openTicketPdf(nextReservationId: string) {
+  async function openTicketPdf(nextReservationId: string, reservationHint?: any) {
     const { accessToken } = getSession();
     const base = getBackendUrl();
     const response = await fetch(`${base}${getProxyPrefix()}/tickets/${encodeURIComponent(nextReservationId)}/show-pdf?locale=en`, {
@@ -1149,7 +1174,7 @@ export default function BookingPage() {
     });
     if (!response.ok) { throw new Error(await response.text() || "Failed to open ticket PDF"); }
     const contentType = response.headers.get("content-type") || "";
-    const fileName = await getTicketFileName(nextReservationId);
+    const fileName = await getTicketFileName(nextReservationId, reservationHint);
     function triggerDownload(href: string, name: string) {
       const anchor = document.createElement("a"); anchor.href = href; anchor.download = name;
       document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
