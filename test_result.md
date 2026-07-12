@@ -120,6 +120,61 @@ user_problem_statement: |
     - Edge-function / svp-proxy setup should stay as-is.
 
 frontend:
+  - task: "Switch frontend .env to live Supabase project mziyrhutfmtdczggemhe"
+    implemented: true
+    working: true
+    file: "frontend/.env"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            User supplied real Supabase project values. Updated frontend/.env:
+            VITE_SUPABASE_PROJECT_ID/URL/PUBLISHABLE_KEY -> mziyrhutfmtdczggemhe,
+            added VITE_BACKEND_URL=https://mziyrhutfmtdczggemhe.supabase.co/functions/v1.
+            REACT_APP_BACKEND_URL untouched. Frontend restarted (RUNNING, HTTP 200).
+            Pre-check: POST /functions/v1/access-auth/login returns 400
+            "Email and password required" -> edge function deployed & reachable.
+            Needs testing-agent verification: live access login (admin/agency creds in
+            /app/memory/test_credentials.md), labor /dashboard Dark Premium render.
+        - working: true
+          agent: "testing"
+          comment: |
+            VERIFIED ALL REQUIREMENTS - NEW SUPABASE PROJECT FULLY FUNCTIONAL:
+            
+            1. Edge Functions Deployed (curl tests):
+               ✅ access-auth/login: 400 "Email and password required" (empty payload)
+               ✅ access-auth/login: 200 + token (admin@example.com / 12345678)
+               ✅ svp-auth/login: 400 "login and password required" (function exists)
+               ✅ svp-proxy/occupations: 401 "Missing access token" (function exists)
+               ✅ svp-proxy/payments: 401 "Missing session" (NEW route exists, requires SVP session)
+            
+            2. Access Control Login (Playwright UI tests):
+               ✅ ADMIN (admin@example.com / 12345678): Login successful, redirected to
+                  /access/dashboard, legacy layout renders correctly (Welcome Super Admin,
+                  Role: ADMIN, Status: ACTIVE, account details table visible).
+               ✅ AGENCY (tahsinhridoy2022@gmail.com / 12345678): Login successful,
+                  redirected to /access/dashboard, dashboard renders.
+               NOTE: Legacy access dashboard layout is EXPECTED (no .ap-* premium theme in
+               this workspace per review instructions — not a bug).
+            
+            3. Labor Dark Premium Dashboard (Playwright):
+               ✅ /dashboard with fake token: All assertions PASS
+                  - .dp-shell element exists
+                  - "Payment History" text visible
+                  - 4 .dp-stat cards present (Total/Successful/Failed/Pending)
+                  - Payment History shows "Invalid signature" (expected with fake token)
+                  - Dark Premium theme renders: deep navy + gold, glassmorphic cards
+            
+            4. Vitest Regression Tests:
+               ✅ 88/88 tests PASS across 14 suites (no regressions)
+            
+            CONCLUSION: New Supabase project mziyrhutfmtdczggemhe is LIVE and WORKING.
+            All edge functions deployed, both Access Control accounts exist and login
+            successfully, Labor dashboard Dark Premium theme renders correctly, all tests pass.
+
   - task: "Payment History + Dashboard Dark Premium redesign + FailedBookingsBanner + My Bookings paid filter"
     implemented: true
     working: true
@@ -300,3 +355,28 @@ agent_communication:
       No changes to svp-proxy / Supabase edge functions / UI layout.
       Frontend supervisor was failing pre-existing because of missing `start` script in
       package.json — added it; service is now RUNNING.
+  - agent: "testing"
+    message: |
+      COMPREHENSIVE VERIFICATION COMPLETE - NEW SUPABASE PROJECT FULLY OPERATIONAL
+      
+      Tested "Switch frontend .env to live Supabase project mziyrhutfmtdczggemhe" task:
+      
+      ✅ ALL EDGE FUNCTIONS DEPLOYED on mziyrhutfmtdczggemhe:
+         - access-auth/login (working, returns tokens)
+         - svp-auth/login (deployed)
+         - svp-proxy/occupations (deployed)
+         - svp-proxy/payments (NEW GET route deployed, requires SVP session)
+      
+      ✅ ACCESS CONTROL LOGIN WORKING (both accounts exist on new project):
+         - admin@example.com / 12345678 → login successful, dashboard renders
+         - tahsinhridoy2022@gmail.com / 12345678 → login successful, dashboard renders
+         - Legacy access dashboard layout is EXPECTED (no .ap-* premium theme here)
+      
+      ✅ LABOR DARK PREMIUM DASHBOARD RENDERS CORRECTLY:
+         - .dp-shell exists, Payment History visible, 4 stat cards present
+         - Dark Premium theme (deep navy + gold) working as designed
+         - "Invalid signature" error with fake token is EXPECTED behavior
+      
+      ✅ VITEST: 88/88 tests PASS (no regressions)
+      
+      NO ISSUES FOUND. All verification requirements met. Ready for production use.
