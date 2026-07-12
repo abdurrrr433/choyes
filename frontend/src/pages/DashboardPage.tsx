@@ -1,6 +1,12 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { apiAuth, clearSession, getSession } from "@/lib/api";
+import {
+  fetchPaymentHistory,
+  summarizePayments,
+  type PaymentRecord,
+} from "@/lib/payments";
+import "@/styles/dashboard-premium.css";
 
 function decodeJwtPayload(token: string) {
   try {
@@ -12,6 +18,22 @@ function decodeJwtPayload(token: string) {
   }
 }
 
+function formatTimestamp(value: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+const BADGE_LABEL: Record<PaymentRecord["status"], string> = {
+  success: "Successful",
+  failed: "Failed",
+  pending: "Pending",
+  unknown: "Unknown",
+};
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [me, setMe] = useState<any>(null);
@@ -19,13 +41,35 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
 
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [paymentsSource, setPaymentsSource] = useState<string>("");
+  const [paymentsLoading, setPaymentsLoading] = useState(true);
+  const [paymentsError, setPaymentsError] = useState("");
+
   useEffect(() => {
     const { accessToken } = getSession();
     if (!accessToken) { navigate("/auth/login"); return; }
     const payload = decodeJwtPayload(accessToken);
     setMe(payload ? { login: payload.login || "User" } : { login: "User" });
     setLoading(false);
+    void loadPayments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
+
+  async function loadPayments() {
+    setPaymentsLoading(true);
+    setPaymentsError("");
+    try {
+      const { records, source } = await fetchPaymentHistory();
+      setPayments(records);
+      setPaymentsSource(source);
+    } catch (err: any) {
+      setPayments([]);
+      setPaymentsError(err?.message || "Failed to load payment history");
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -42,75 +86,116 @@ export default function DashboardPage() {
     }
   }
 
+  const summary = summarizePayments(payments);
+
   return (
-    <div className="dashboard-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark" />
+    <div className="dp-shell">
+      <aside className="dp-sidebar">
+        <div className="dp-brand">
+          <div className="dp-brand-mark" />
           <div>
             <strong>Professional</strong>
             <span>Accreditation</span>
           </div>
         </div>
-        <nav className="sidebar-nav">
-          <Link className="nav-item nav-item--active" to="/dashboard">Account Dashboard</Link>
-          <Link className="nav-item" to="/exam/reservations">My bookings</Link>
-          <Link className="nav-item" to="/exam/booking">New booking</Link>
+        <nav className="dp-nav">
+          <Link className="dp-nav-item dp-nav-item--active" to="/dashboard">Account Dashboard</Link>
+          <Link className="dp-nav-item" to="/exam/reservations">My bookings</Link>
+          <Link className="dp-nav-item" to="/exam/booking">New booking</Link>
         </nav>
       </aside>
 
-      <main className="main">
-        <header className="topbar">
-          <div className="topbar__locale">العربية</div>
-          <div className="topbar__user">
-            <div className="avatar" />
+      <main className="dp-main">
+        <header className="dp-topbar">
+          <div className="dp-user">
+            <div className="dp-avatar" />
             <div>
               <strong>{loading ? "Loading..." : me?.name || me?.login || "User"}</strong>
               <span>{me?.role || "Labor"}</span>
             </div>
-            <button className="logout-btn" type="button" onClick={handleLogout} disabled={loggingOut}>
-              {loggingOut ? "Logging out..." : "Logout"}
-            </button>
           </div>
+          <button className="dp-logout" type="button" onClick={handleLogout} disabled={loggingOut}>
+            {loggingOut ? "Logging out..." : "Logout"}
+          </button>
         </header>
 
-        <section className="hero">
-          <div className="hero__copy">
-            <h1>Advance your career through professional accreditation</h1>
-            <p>Use your dashboard to manage bookings, review current reservations, and continue your accreditation process from one place.</p>
-            <Link className="hero__cta" to="/exam/booking">Start Verification</Link>
-          </div>
-          <div className="hero__steps">
-            <div className="step"><span>1</span><strong>Select your occupation</strong></div>
-            <div className="step"><span>2</span><strong>Enter your data</strong></div>
-            <div className="step"><span>3</span><strong>Review and confirm your information</strong></div>
-            <div className="step"><span>4</span><strong>Pay for the verification</strong></div>
-          </div>
+        <section className="dp-hero">
+          <h1>Advance your career through professional accreditation</h1>
+          <p>Manage bookings, review reservations and track every payment attempt from one premium dashboard.</p>
+          <Link className="dp-hero-cta" to="/exam/booking">Start Verification</Link>
         </section>
 
-        {error ? <div className="error-card">{error}</div> : null}
+        {error ? <div className="dp-error">{error}</div> : null}
 
-        <section className="content">
-          <div className="tabs">
-            <span className="tabs__item tabs__item--active">Bookings</span>
-            <span className="tabs__item">Requests</span>
-          </div>
-          <div className="booking-card">
-            <div className="booking-card__head">
-              <div>
-                <span className="label">Occupation</span>
-                <h2>Manage your exam bookings</h2>
-              </div>
-              <div className="booking-card__actions">
-                <Link className="action-btn action-btn--primary" to="/exam/booking">New booking</Link>
-                <Link className="action-btn" to="/exam/reservations">View details</Link>
-              </div>
+        <section className="dp-stats">
+          <div className="dp-stat dp-stat--gold"><span>Total payments</span><strong>{paymentsLoading ? "…" : summary.total}</strong></div>
+          <div className="dp-stat dp-stat--green"><span>Successful</span><strong>{paymentsLoading ? "…" : summary.success}</strong></div>
+          <div className="dp-stat dp-stat--red"><span>Failed</span><strong>{paymentsLoading ? "…" : summary.failed}</strong></div>
+          <div className="dp-stat dp-stat--amber"><span>Pending</span><strong>{paymentsLoading ? "…" : summary.pending}</strong></div>
+        </section>
+
+        <section className="dp-panel">
+          <div className="dp-panel-head">
+            <div>
+              <h2>Payment History</h2>
+              <span className="dp-sub">
+                Every payment attempt — successful, failed and pending.
+                {paymentsSource === "reservation-embedded" ? " (derived from your reservations)" : ""}
+              </span>
             </div>
-            <div className="booking-card__grid">
-              <div><span className="label">Account</span><strong>{loading ? "Loading..." : me?.email || me?.login || "-"}</strong></div>
-              <div><span className="label">Booking status</span><strong className="success-dot">Ready</strong></div>
-              <div><span className="label">Methodology</span><strong>Direct Assessment</strong></div>
-              <div><span className="label">Actions</span><strong>Book, review, reschedule</strong></div>
+            <button className="dp-btn" type="button" onClick={loadPayments} disabled={paymentsLoading}>
+              {paymentsLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+
+          {paymentsError ? <div className="dp-error">{paymentsError}</div> : null}
+          {paymentsLoading ? <div className="dp-empty">Loading payment history…</div> : null}
+          {!paymentsLoading && !payments.length && !paymentsError ? (
+            <div className="dp-empty">No payment attempts found yet. They will appear here after your first booking payment.</div>
+          ) : null}
+
+          {!paymentsLoading && payments.length ? (
+            <div className="dp-table-wrap">
+              <table className="dp-table">
+                <thead>
+                  <tr>
+                    <th>Payment ID</th>
+                    <th>Reservation</th>
+                    <th>Occupation</th>
+                    <th>Date &amp; time</th>
+                    <th>Amount</th>
+                    <th>Method</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payments.map((p, idx) => (
+                    <tr key={`${p.paymentId}-${p.reservationId}-${idx}`}>
+                      <td>{p.paymentId}</td>
+                      <td>#{p.reservationId}</td>
+                      <td>{p.occupation}</td>
+                      <td>{formatTimestamp(p.createdAt)}</td>
+                      <td>{p.amount === "-" ? "-" : `${p.amount} ${p.currency}`}</td>
+                      <td>{p.method}</td>
+                      <td><span className={`dp-badge dp-badge--${p.status}`}>{BADGE_LABEL[p.status]}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+          <p className="dp-note">Need to complete a failed or pending payment? Open the Booking page — a retry banner appears there automatically.</p>
+        </section>
+
+        <section className="dp-panel">
+          <div className="dp-panel-head">
+            <div>
+              <h2>Manage your exam bookings</h2>
+              <span className="dp-sub">Book, review, reschedule or cancel from the bookings area.</span>
+            </div>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <Link className="dp-btn" to="/exam/booking">New booking</Link>
+              <Link className="dp-btn" to="/exam/reservations">View bookings</Link>
             </div>
           </div>
         </section>

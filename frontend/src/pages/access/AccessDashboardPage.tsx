@@ -1,143 +1,129 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  Activity, Building2, CircleUserRound, Database, FileSliders,
+  LayoutDashboard, LogOut, Plus, Server, ShieldCheck, Users,
+} from "lucide-react";
 import { useAccessAuth } from "@/contexts/AccessAuthContext";
-import { useNavigate, Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users, Building2, LogOut } from "lucide-react";
+import { accessAdminApi, accessAgencyApi } from "@/lib/access-api";
+import "@/styles/access-dashboard-premium.css";
+
+interface Account {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at?: string;
+}
+
+function initials(name?: string) {
+  return String(name || "User").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+}
+
+function formatDate(value?: string) {
+  if (!value) return "Recently";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Recently" : date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
 
 export default function AccessDashboardPage() {
   const { user, logout } = useAccessAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  function handleLogout() {
-    logout();
-    navigate("/access/login");
-  }
-
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const isAdmin = user?.role === "ADMIN";
-  const isAgency = user?.role === "AGENCY";
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      setLoading(true); setError("");
+      try {
+        const response = isAdmin ? await accessAdminApi<{ accounts: Account[] }>("/accounts") : await accessAgencyApi<{ users: Account[] }>("/users");
+        if (active) setAccounts(isAdmin ? (response as any).accounts || [] : (response as any).users || []);
+      } catch (err: any) {
+        if (active) setError(err?.message || "Could not load dashboard data");
+      } finally { if (active) setLoading(false); }
+    }
+    if (user) void load();
+    return () => { active = false; };
+  }, [isAdmin, user]);
+
+  const stats = useMemo(() => {
+    const active = accounts.filter((item) => item.status === "ACTIVE").length;
+    const inactive = accounts.length - active;
+    if (isAdmin) return [
+      ["Total accounts", accounts.length, "All roles combined", "blue"],
+      ["Active", active, "Currently active accounts", "green"],
+      ["Inactive", inactive, "Awaiting activation / suspended", "red"],
+      ["Agencies", accounts.filter((item) => item.role === "AGENCY").length, "Agency partners", "gold"],
+    ];
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return [
+      ["My users", accounts.length, "Users in your agency", "blue"],
+      ["Active", active, "Currently active users", "green"],
+      ["Inactive", inactive, "Awaiting activation / suspended", "red"],
+      ["Active this week", accounts.filter((item) => item.created_at && new Date(item.created_at).getTime() >= weekAgo).length, "Recently added users", "gold"],
+    ];
+  }, [accounts, isAdmin]);
+
+  function handleLogout() { logout(); navigate("/access/login"); }
 
   return (
-    <div className="dashboard-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark" />
-          <div>
-            <strong>Access</strong>
-            <span>Control Panel</span>
-          </div>
-        </div>
-        <nav className="sidebar-nav">
-          <Link
-            className={`nav-item ${location.pathname === "/access/dashboard" ? "nav-item--active" : ""}`}
-            to="/access/dashboard"
-          >
-            Dashboard
-          </Link>
-          {isAdmin && (
-            <Link
-              className={`nav-item ${location.pathname === "/access/accounts" ? "nav-item--active" : ""}`}
-              to="/access/accounts"
-            >
-              All Accounts
-            </Link>
-          )}
-          {(isAdmin || isAgency) && (
-            <Link
-              className={`nav-item ${location.pathname === "/access/users" ? "nav-item--active" : ""}`}
-              to="/access/users"
-            >
-              {isAdmin ? "Create Users" : "My Users"}
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              className={`nav-item ${location.pathname === "/access/agencies" ? "nav-item--active" : ""}`}
-              to="/access/agencies"
-            >
-              Create Agency
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              className={`nav-item ${location.pathname === "/access/session-centers" ? "nav-item--active" : ""}`}
-              to="/access/session-centers"
-            >
-              Session Centers
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              className={`nav-item ${location.pathname === "/access/section-rules" ? "nav-item--active" : ""}`}
-              to="/access/section-rules"
-            >
-              Section Rules
-            </Link>
-          )}
+    <div className="ap-shell">
+      <aside className="ap-sidebar">
+        <div className="ap-brand"><span className="ap-brand__mark">A</span><div><strong>Access</strong><small>{isAdmin ? "ADMIN CONSOLE" : "AGENCY CONSOLE"}</small></div></div>
+        <nav className="ap-nav">
+          <small>OVERVIEW</small>
+          <Link className="ap-nav__link ap-nav__link--active" to="/access/dashboard"><LayoutDashboard />Dashboard</Link>
+          {isAdmin ? <>
+            <small>ACCESS CONTROL</small>
+            <Link className="ap-nav__link" to="/access/accounts"><Users />All Accounts</Link>
+            <Link className="ap-nav__link" to="/access/agencies"><Building2 />Create Agency</Link>
+            <Link className="ap-nav__link" to="/access/users"><CircleUserRound />Create Users</Link>
+            <small>INFRASTRUCTURE</small>
+            <Link className="ap-nav__link" to="/access/session-centers"><Server />Session Centers</Link>
+            <Link className="ap-nav__link" to="/access/section-rules"><FileSliders />Section Rules</Link>
+          </> : <>
+            <small>AGENCY</small>
+            <Link className="ap-nav__link" to="/access/users"><Users />My Users</Link>
+          </>}
         </nav>
+        <div className="ap-sidebar__foot">Access Control · v2</div>
       </aside>
 
-      <main className="main">
-        <header className="topbar">
-          <div className="topbar__user">
-            <div className="avatar" />
-            <div>
-              <strong>{user?.name || "User"}</strong>
-              <span>{user?.role || "USER"}</span>
-            </div>
-            <button className="logout-btn" type="button" onClick={handleLogout}>
-              Logout
-            </button>
-          </div>
+      <main className="ap-main">
+        <header className="ap-topbar">
+          <div><small>{isAdmin ? "ADMIN CONSOLE" : "AGENCY CONSOLE"}</small><strong>Welcome back, {user?.name || "User"}</strong></div>
+          <div className="ap-account"><span className={`ap-role ap-role--${isAdmin ? "admin" : "agency"}`}>{user?.role}</span><span className="ap-avatar">{initials(user?.name)}</span><div><strong>{user?.name}</strong><small>{user?.email}</small></div><button onClick={handleLogout}><LogOut />Logout</button></div>
         </header>
 
-        <section className="hero">
-          <div className="hero__copy">
-            <h1>Welcome, {user?.name || "User"}</h1>
-            <p>
-              {isAdmin
-                ? "Manage agencies, users, and account statuses from this panel."
-                : isAgency
-                ? "Manage your users and monitor their status."
-                : "View your account information."}
-            </p>
-          </div>
-          <div className="hero__steps">
-            <div className="step">
-              <span><LayoutDashboard className="h-4 w-4" /></span>
-              <strong>Role: {user?.role}</strong>
-            </div>
-            <div className="step">
-              <span><Users className="h-4 w-4" /></span>
-              <strong>Status: {user?.status}</strong>
-            </div>
-            <div className="step">
-              <span><Building2 className="h-4 w-4" /></span>
-              <strong>Email: {user?.email}</strong>
-            </div>
+        <section className="ap-hero">
+          <span className="ap-hero__ring ap-hero__ring--one"/><span className="ap-hero__ring ap-hero__ring--two"/>
+          <div className="ap-eyebrow"><ShieldCheck />{isAdmin ? "SYSTEM ADMINISTRATOR" : "AGENCY WORKSPACE"}</div>
+          <h1>{isAdmin ? "Control every account, agency and exam centre from one command centre." : "Manage your team of exam-booking users with confidence."}</h1>
+          <p>{isAdmin ? "Provision agencies, create users, configure session centres and adjust section rules — every change stays visible in real time." : "Create users, monitor account health and keep your agency team ready for every booking."}</p>
+          <div className="ap-hero__actions">
+            {isAdmin ? <><Link className="ap-btn ap-btn--gold" to="/access/agencies"><Plus />New Agency</Link><Link className="ap-btn" to="/access/users"><Plus />New User</Link><Link className="ap-btn" to="/access/accounts">Manage Accounts →</Link></> : <Link className="ap-btn ap-btn--gold" to="/access/users"><Plus />Add User</Link>}
           </div>
         </section>
 
-        <section className="content">
-          <div className="booking-card">
-            <div className="booking-card__head">
-              <div>
-                <span className="label">Account Info</span>
-                <h2>Your Account Details</h2>
-              </div>
-              <div className="booking-card__actions">
-                {isAdmin && (
-                  <Link className="action-btn action-btn--primary" to="/access/accounts">
-                    Manage Accounts
-                  </Link>
-                )}
-              </div>
-            </div>
-            <div className="booking-card__grid">
-              <div><span className="label">Name</span><strong>{user?.name}</strong></div>
-              <div><span className="label">Email</span><strong>{user?.email}</strong></div>
-              <div><span className="label">Role</span><strong>{user?.role}</strong></div>
-              <div><span className="label">Status</span><strong className="success-dot">{user?.status}</strong></div>
-            </div>
-          </div>
+        {error && <div className="ap-error">{error}</div>}
+        <section className="ap-stats">{stats.map(([label, value, note, tone]) => <article className="ap-stat" key={String(label)}><small>{label}</small><strong className={`ap-tone--${tone}`}>{loading ? "…" : value}</strong><span>{note}</span></article>)}</section>
+
+        {isAdmin && <section className="ap-infra">
+          <Link className="ap-infra__card" to="/access/session-centers"><Server /><div><small>SESSION CENTERS</small><strong>Manage</strong></div></Link>
+          <Link className="ap-infra__card" to="/access/section-rules"><FileSliders /><div><small>SECTION RULES</small><strong>Configure</strong></div></Link>
+          <Link className="ap-infra__card" to="/access/test-centers"><Database /><div><small>TEST CENTERS</small><strong>Review</strong></div></Link>
+        </section>}
+
+        <section className="ap-grid">
+          <article className="ap-panel ap-list"><header><div><small>RECENT ACTIVITY</small><h2>{isAdmin ? "Recently created accounts" : "Your agency users"}</h2></div><Link to={isAdmin ? "/access/accounts" : "/access/users"}>View all</Link></header>
+            {loading ? <p className="ap-muted">Loading live accounts…</p> : accounts.slice(0, 6).map((item) => <div className="ap-row" key={item.id}><span className="ap-row__avatar">{initials(item.name)}</span><div><strong>{item.name}</strong><small>{item.email}</small></div><span className="ap-row__role">{item.role}</span><time>{formatDate(item.created_at)}</time><span className={`ap-status ap-status--${item.status === "ACTIVE" ? "active" : "inactive"}`}>● {item.status}</span></div>)}
+            {!loading && !accounts.length && <p className="ap-muted">No accounts found.</p>}
+          </article>
+          <aside className="ap-panel ap-quick"><small>SHORTCUTS</small><h2>Quick Actions</h2>{isAdmin && <Link to="/access/agencies"><Building2 />Create Agency</Link>}<Link to="/access/users"><Users />{isAdmin ? "Create User" : "Manage My Users"}</Link><div className="ap-self"><Activity /><div><small>YOUR ACCOUNT</small><strong>{user?.status}</strong><span>{user?.email}</span></div></div></aside>
         </section>
       </main>
     </div>
