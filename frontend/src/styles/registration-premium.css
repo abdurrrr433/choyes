@@ -1,1 +1,22 @@
 .rg-shell{min-height:100vh;padding:32px;background:radial-gradient(circle at 15% 5%,#0f766e44,transparent 25%),linear-gradient(145deg,#07111d,#0b1828);color:#eef6fb}.rg-panel{max-width:1050px;margin:auto;padding:34px;border:1px solid #2c465b;border-radius:22px;background:#0e1d2dcc;box-shadow:0 25px 80px #0007}.rg-panel header span{color:#63ead4;font-size:10px;font-weight:900;letter-spacing:.2em}.rg-panel header h1{margin:10px 0;color:#fff;font-size:clamp(30px,5vw,52px);letter-spacing:-.04em}.rg-panel header p{color:#a8bac8}.rg-progress{display:flex;align-items:center;margin:30px 0}.rg-progress b{display:flex;gap:8px;align-items:center;color:#657c90}.rg-progress b.on{color:#f0c957}.rg-progress small{font-size:11px}.rg-progress i{height:1px;flex:1;margin:0 12px;background:#294156}.rg-form{padding:26px;border:1px solid #294156;border-radius:16px;background:#101f30}.rg-form h2{margin-top:0;color:#fff}.rg-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.rg-grid label{display:flex;flex-direction:column;gap:7px;color:#9db1c1;font-size:12px}.rg-grid input,.rg-grid select,.rg-grid textarea{min-height:44px;padding:10px 12px;border:1px solid #36536a;border-radius:9px;background:#091625;color:#f4f8fb}.rg-grid input[type=file]{padding:9px}.rg-wide{grid-column:1/-1}.rg-form button,.rg-complete button{margin-top:20px;padding:12px 20px;border:0;border-radius:9px;background:linear-gradient(135deg,#f1cc59,#ce9b26);color:#211805;font-weight:900;cursor:pointer}.rg-actions{display:flex;justify-content:space-between}.rg-actions button:first-child{border:1px solid #3c586f;background:#14283a;color:#d9e5ed}.rg-message{margin-top:16px;padding:13px;border:1px solid #38566d;border-radius:10px;background:#12283b;color:#b9d1df}.rg-complete{text-align:center;padding:40px}.rg-complete>strong{display:grid;width:70px;height:70px;margin:auto;place-items:center;border-radius:50%;background:#174d3e;color:#5de0b5;font-size:34px}.rg-panel footer{margin-top:20px;color:#91a6b6}.rg-panel a{color:#67e1cf}@media(max-width:700px){.rg-shell{padding:14px}.rg-panel{padding:22px}.rg-grid{grid-template-columns:1fr}.rg-wide{grid-column:auto}}
+.rg-dropzone{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:170px;padding:22px;border:2px dashed #3f6884;border-radius:14px;background:linear-gradient(160deg,#0b1a2b,#0f2438);cursor:pointer;transition:all .18s ease;text-align:center;position:relative;overflow:hidden}
+.rg-dropzone:hover{border-color:#63ead4;background:linear-gradient(160deg,#0d2237,#123049)}
+.rg-dropzone.drag{border-color:#f0c957;background:linear-gradient(160deg,#132a44,#1a3958);box-shadow:0 0 0 4px #f0c95733 inset}
+.rg-dropzone.busy{cursor:progress;border-color:#63ead4;animation:rg-pulse 1.4s ease-in-out infinite}
+.rg-dropzone.ok{border-color:#5de0b5;background:linear-gradient(160deg,#0d2a24,#123f34)}
+.rg-dropzone.err{border-color:#ff8a8a;background:linear-gradient(160deg,#2b0f14,#3a141c)}
+.rg-dropzone .rg-dz-title{font-size:15px;font-weight:800;color:#f4f8fb;letter-spacing:.01em}
+.rg-dropzone .rg-dz-sub{font-size:12px;color:#9db1c1;max-width:520px}
+.rg-dropzone .rg-dz-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#f0c95722;color:#f0c957;font-size:10px;font-weight:800;letter-spacing:.15em;text-transform:uppercase}
+.rg-dropzone .rg-dz-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:4px}
+.rg-dropzone .rg-dz-btn{padding:8px 14px;border:1px solid #3c586f;border-radius:8px;background:#14283a;color:#d9e5ed;font-size:12px;font-weight:700;cursor:pointer}
+.rg-dropzone .rg-dz-btn.primary{background:linear-gradient(135deg,#f1cc59,#ce9b26);color:#211805;border:0}
+.rg-dropzone .rg-dz-btn:disabled{opacity:.55;cursor:not-allowed}
+.rg-dropzone .rg-dz-preview{display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:10px;background:#00000033;color:#cdd7de;font-size:12px}
+.rg-dropzone .rg-dz-preview img{width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid #294156}
+.rg-dz-status{display:flex;align-items:center;gap:8px;font-size:12px;color:#a8bac8}
+.rg-dz-status.err{color:#ff8a8a}
+.rg-dz-status.ok{color:#5de0b5}
+.rg-dz-spinner{width:14px;height:14px;border:2px solid #63ead455;border-top-color:#63ead4;border-radius:50%;animation:rg-spin .8s linear infinite}
+@keyframes rg-spin{to{transform:rotate(360deg)}}
+@keyframes rg-pulse{0%,100%{box-shadow:0 0 0 0 #63ead422 inset}50%{box-shadow:0 0 0 6px #63ead433 inset}}
