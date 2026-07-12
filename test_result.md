@@ -120,6 +120,64 @@ user_problem_statement: |
     - Edge-function / svp-proxy setup should stay as-is.
 
 frontend:
+  - task: "Live SVP labor e2e (login+OTP -> dashboard payment history -> reservations -> booking read-only)"
+    implemented: true
+    working: "partial"
+    file: "frontend/src/pages/DashboardPage.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            User provided real SVP creds (see /app/memory/test_credentials.md).
+            Created access USER account e2euser@yopmail.com / E2eTest#123 via
+            access-admin API (needed to reach /auth/login). OTP arrives at public
+            yopmail inbox. Verify: SVP login+OTP, Dark Premium dashboard with REAL
+            payment history, reservations page (cancel eligibility + paid filter),
+            booking page loads real sessions with correct test center names.
+            STRICT: read-only — no new reservation/payment creation.
+        - working: "partial"
+          agent: "testing"
+          comment: |
+            PARTIAL VERIFICATION COMPLETED (Steps 1-2 of 6):
+            
+            ✓ STEP 1 - Access Gate Login (PASSED):
+              - Navigated to http://localhost:3000/access/login
+              - Successfully logged in with e2euser@yopmail.com / E2eTest#123
+              - Correctly redirected to /auth/login (SVP portal login)
+              - USER role correctly routes to SVP login instead of access dashboard
+            
+            ✓ STEP 2 - SVP Login + OTP Request (PASSED):
+              - SVP login page loaded correctly with "Welcome back" heading
+              - Successfully filled credentials: ranakhansvp2465@yopmail.com / aRrazzak90#
+              - Selected OTP method: email
+              - OTP request succeeded and redirected to /auth/otp
+              - OTP page displays correctly with account info (ranakhansvp2465@yopmail.com, EMAIL)
+              - Verify OTP and Resend OTP buttons present
+            
+            ⚠ STEPS 3-6 NOT VERIFIED (Manual OTP Required):
+              - Step 3: OTP verification and dashboard redirect
+              - Step 4: Dashboard Dark Premium theme with real payment data
+              - Step 5: Reservations page with real data and test center names
+              - Step 6: Booking page dropdowns with real test center names
+            
+            REASON: This is a LIVE production test with real SVP credentials. The OTP
+            is sent to a public yopmail inbox and changes with each request. Automated
+            yopmail OTP retrieval failed due to yopmail's dynamic page structure.
+            
+            RECOMMENDATION: To complete full e2e verification, either:
+            1. Manual testing: Have a human tester manually enter the OTP from yopmail
+               and verify steps 3-6 (dashboard, reservations, booking pages)
+            2. Test environment: Set up a test SVP environment with a mock OTP endpoint
+            3. Alternative: Use the existing vitest tests which mock the SVP API responses
+            
+            CONCLUSION: Access control and SVP login flows are working correctly. The
+            authentication flow up to OTP verification is functional. Remaining steps
+            (dashboard, reservations, booking) require manual OTP entry to verify with
+            real production data.
+
   - task: "Switch frontend .env to live Supabase project mziyrhutfmtdczggemhe"
     implemented: true
     working: true
@@ -380,3 +438,24 @@ agent_communication:
       ✅ VITEST: 88/88 tests PASS (no regressions)
       
       NO ISSUES FOUND. All verification requirements met. Ready for production use.
+  - agent: "testing"
+    message: |
+      LIVE SVP E2E TEST - PARTIAL VERIFICATION (Steps 1-2 of 6 completed):
+      
+      ✅ VERIFIED:
+         - Access gate login (e2euser@yopmail.com) → redirects to /auth/login ✓
+         - SVP login (ranakhansvp2465@yopmail.com) → OTP request succeeds ✓
+         - OTP page displays correctly with account info and verify/resend buttons ✓
+      
+      ⚠ NOT VERIFIED (requires manual OTP entry from yopmail):
+         - OTP verification and dashboard redirect
+         - Dashboard Dark Premium with REAL payment data (no "Invalid signature" error)
+         - Reservations page with real data and correct test center names
+         - Booking page dropdowns with real test center names and sessions
+      
+      BLOCKER: Live OTP from public yopmail inbox cannot be reliably automated.
+      Yopmail's dynamic page structure prevents automated OTP extraction.
+      
+      RECOMMENDATION: Manual testing required to complete steps 3-6, OR use test
+      environment with mock OTP endpoint. The authentication flow is working correctly
+      up to the OTP verification step.
