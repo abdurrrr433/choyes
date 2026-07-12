@@ -120,6 +120,47 @@ user_problem_statement: |
     - Edge-function / svp-proxy setup should stay as-is.
 
 frontend:
+  - task: "ReservationsPage Cancel Reservation button eligibility (new SVP shape)"
+    implemented: true
+    working: true
+    file: "frontend/src/lib/reservation-utils.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "user"
+          comment: "New SVP payloads only send can_be_rescheduled:true (no explicit cancel flag); Cancel button was greyed out ('Cancel unavailable') for cancellable reservations. This fix was done in a previous chat but never pushed to GitHub, so it was re-implemented here."
+        - working: true
+          agent: "main"
+          comment: |
+            Re-implemented from previous-chat spec. New lib /app/frontend/src/lib/reservation-utils.ts
+            exporting canCancelReservation / isReservationFinalized / readCancelFlag / readRescheduleFlag.
+            Rules: (1) finalized reservations (canceled/expired/attended/completed/no-show/refunded/void
+            status or canceled_at/cancelled_at timestamp) always blocked; (2) explicit cancel flag (all
+            spelling variants + aliases, string/number coercion) trusted — false overrides fallback;
+            (3) no explicit flag -> can_be_rescheduled:true enables cancel (new SVP shape).
+            ReservationsPage.tsx canCancel() now delegates to the lib (1-line diff + import).
+            payment_status intentionally ignored in finalized check.
+            Verified: new suite ReservationsPage.cancel-eligibility.test.ts (15 tests) — all pass.
+            Full run 82/82 tests, tsc --noEmit clean, yarn build success, frontend RUNNING.
+
+  - task: "BookingPage integration test Supabase mock (.eq/.order + t2hub route)"
+    implemented: true
+    working: true
+    file: "frontend/src/pages/exam/BookingPage.integration.test.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: |
+            Test-only fix: mock supabase chain now supports .select().eq().order() used by
+            BookingPage test_centers city query; api mock handles /t2hub/pacc-exam-sessions;
+            session-option assertions updated to current label format and wrapped in waitFor.
+            No app-code changes.
+
   - task: "BookingPage city filter + test center display for new SVP API shape"
     implemented: true
     working: true

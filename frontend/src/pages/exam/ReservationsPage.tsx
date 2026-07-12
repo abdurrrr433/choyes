@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, getSession, getBackendUrl, getProxyPrefix } from "@/lib/api";
+import { canCancelReservation } from "@/lib/reservation-utils";
 
 function pickArray(payload: any): any[] {
   if (Array.isArray(payload)) return payload;
@@ -140,7 +141,7 @@ function getSiteId(item: any) {
 function getLanguageCode(item: any) { return value(item, ["language_code", "prometric_code", "code"]) || "-"; }
 function getSessionId(item: any) { return value(item, ["exam_session_id"]) || item?.exam_session?.id || ""; }
 function canReschedule(item: any) { return Boolean(item?.can_be_rescheduled); }
-function canCancel(item: any) { return Boolean(item?.can_be_canceled); }
+function canCancel(item: any) { return canCancelReservation(item); }
 function getRescheduleReason(item: any) { return item?.cancellation_reason || item?.violation_reason || item?.reservation_status || ""; }
 function getFullName(item: any) {
   return String(
