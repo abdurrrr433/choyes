@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAccessAuth } from "@/contexts/AccessAuthContext";
 import { accessAdminApi } from "@/lib/access-api";
+import "@/styles/access-dashboard-premium.css";
 
 type Rule = {
   id: string;
@@ -119,7 +120,7 @@ export default function AccessSectionRulesPage() {
   }
 
   return (
-    <div className="dashboard-shell">
+    <div className="dashboard-shell ap-console">
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark" />

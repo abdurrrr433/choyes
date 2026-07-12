@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAccessAuth } from "@/contexts/AccessAuthContext";
 import { accessAdminApi } from "@/lib/access-api";
+import "@/styles/access-dashboard-premium.css";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 
 export default function AccessAgenciesPage() {
@@ -33,7 +34,7 @@ export default function AccessAgenciesPage() {
   function handleLogout() { logout(); navigate("/access/login"); }
 
   return (
-    <div className="dashboard-shell">
+    <div className="dashboard-shell ap-console">
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark" />

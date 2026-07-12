@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAccessAuth } from "@/contexts/AccessAuthContext";
 import { accessAdminApi, accessAgencyApi } from "@/lib/access-api";
+import "@/styles/access-dashboard-premium.css";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 
 export default function AccessUsersPage() {
@@ -95,7 +96,7 @@ export default function AccessUsersPage() {
   const tdStyle: React.CSSProperties = { padding: "12px 16px" };
 
   return (
-    <div className="dashboard-shell">
+    <div className="dashboard-shell ap-console">
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark" />
