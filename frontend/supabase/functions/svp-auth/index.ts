@@ -4,7 +4,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 function json(data: unknown, status = 200) {
@@ -59,6 +59,20 @@ async function svpRequest(
   if (!res.ok) {
     throw { statusCode: res.status, message: `SVP request failed: ${res.status}`, details: data };
   }
+  return data;
+}
+
+async function svpMultipartRequest(path: string, body: FormData) {
+  const url = `${SVP_BASE}${path}${path.includes("?") ? "&" : "?"}locale=${SVP_LOCALE}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json", Origin: SVP_ORIGIN, Referer: `${SVP_ORIGIN}/`, "User-Agent": SVP_UA },
+    body,
+  });
+  const text = await res.text();
+  let data: unknown;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (!res.ok) throw { statusCode: res.status, message: `SVP request failed: ${res.status}`, details: data };
   return data;
 }
 
@@ -204,6 +218,26 @@ Deno.serve(async (req) => {
   const path = url.pathname.replace(/^\/svp-auth/, "");
 
   try {
+    // Public registration reference data. No captured/user bearer token is used.
+    if (req.method === "GET" && path === "/registration/countries") {
+      return json(await svpRequest("/api/v1/visitor_space/countries?per_page=250"));
+    }
+    const countryMatch = path.match(/^\/registration\/countries\/([^/]+)$/);
+    if (req.method === "GET" && countryMatch) {
+      return json(await svpRequest(`/api/v1/visitor_space/countries/${encodeURIComponent(countryMatch[1])}`));
+    }
+
+    // SVP registration uses multipart/form-data (including passport/image files).
+    if (req.method === "POST" && (path === "/registration/validate" || path === "/registration")) {
+      const contentType = req.headers.get("content-type") || "";
+      if (!contentType.includes("multipart/form-data")) return json({ error: "multipart/form-data required" }, 415);
+      const form = await req.formData();
+      const target = path === "/registration/validate"
+        ? "/api/v1/individual_labor_space/registrations/validate"
+        : "/api/v1/individual_labor_space/registrations";
+      return json(await svpMultipartRequest(target, form));
+    }
+
     if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
     const body = await req.json().catch(() => ({}));
     const supabase = getSupabase();

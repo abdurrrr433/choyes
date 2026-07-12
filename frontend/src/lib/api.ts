@@ -86,6 +86,24 @@ export async function apiAuth<T = any>(
   return data as T;
 }
 
+export async function apiAuthGet<T = any>(action: string): Promise<T> {
+  const { res, data } = await doFetch(`${BASE}${AUTH_PREFIX}${action}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw Object.assign(new Error(data?.message || data?.error || "Request failed"), { status: res.status, data });
+  return data as T;
+}
+
+export async function apiAuthForm<T = any>(action: string, form: FormData): Promise<T> {
+  const res = await fetch(`${BASE}${AUTH_PREFIX}${action}`, { method: "POST", body: form });
+  const text = await res.text();
+  let data: any;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (!res.ok) throw Object.assign(new Error(data?.message || data?.error || "Request failed"), { status: res.status, data });
+  return data as T;
+}
+
 async function callFunction<T = any>(
   kind: FunctionKind,
   path: string,

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { apiAuth } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -94,6 +95,7 @@ export default function LoginPage() {
           <button type="submit" className="auth-submit">Sign in</button>
           <p className="auth-message">{msg}</p>
         </form>
+        <p className="auth-message">New labor applicant? <Link to="/auth/register">Create an SVP account</Link></p>
 
         <div className="auth-heading" style={{ marginTop: "1rem" }}>
           <h2>Direct Token Login</h2>
