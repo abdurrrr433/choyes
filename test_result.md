@@ -272,6 +272,16 @@ frontend:
         - working: true
           agent: "testing"
           comment: |
+            Verified: 11/11 registration-payload.test.ts pass, full suite 87/87 across 14
+            files, no regressions. Static greps confirm contact_to_confirm is the literal
+            "email" (not form.email), toApiDate wraps both date fields in appendCommon, and
+            resolveCountryDialingCode is used in both the Country onChange handler and the
+            country_code data.set line. Module exports only the two named helpers, no default
+            export, no side effects. No TS errors, no missing files. Live browser E2E
+            skipped by design (SVP token expired per PRD backlog). Fix production-ready.
+        - working: true
+          agent: "testing"
+          comment: |
             Unit-test-driven verification completed successfully. All 3 payload bugs confirmed fixed.
 
             Step A — Regression suite: 11/11 tests passed in registration-payload.test.ts
