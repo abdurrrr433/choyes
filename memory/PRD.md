@@ -25,6 +25,7 @@ User language: Bengali (technical terms in English).
 - `/app/frontend/vite.config.ts` — `allowedHosts: true` for Emergent preview.
 
 ## What's Been Implemented
+- 2026-02 — **Payment History + Dashboard Dark Premium redesign (re-implemented after lost chat)**: `lib/payments.ts` (GET /payments with reservations fallback), `styles/dashboard-premium.css` (.dp-* isolated theme), `DashboardPage.tsx` rewrite (4 stat cards + payment table), `FailedBookingsBanner.tsx` on BookingPage (Retry Payment via openPaymentPage), ReservationsPage paid/credit-only filter, svp-proxy `GET /payments` route. 6 new payments-lib tests.
 - 2026-02 — **Cancel Reservation eligibility fix (re-implemented after lost chat)**: new `lib/reservation-utils.ts` (`canCancelReservation`) — finalized statuses/timestamps block; explicit cancel flags (all variants) trusted; fallback to `can_be_rescheduled:true` for new SVP shape. `ReservationsPage.tsx` delegates. 15-test suite `ReservationsPage.cancel-eligibility.test.ts`.
 - 2026-02 — BookingPage integration test mock fixed (.eq/.order chain, /t2hub/pacc-exam-sessions route, waitFor assertions).
 - 2026-02 — Booking page SVP-first center resolution (no admin override when SVP returns name+id).
@@ -39,10 +40,10 @@ User language: Bengali (technical terms in English).
 - 2026-02 — **BookingPage new-booking POST now mirrors the official SVP frontend confirm step**: `site_id: null`, `site_city: null`, `hold_id: null`. Previously stale UI fallbacks (e.g. `site_id: 1` for Dhaka) were forwarded and SVP used them as an override, causing the reservation to land at a DIFFERENT centre in the same city. Captured via network trace of `svp-international.pacc.sa`. Regression test: `BookingPage.reservation-payload.test.ts`.
 
 ## Current Test Status
-- 82/82 Vitest tests passing across 13 suites (incl. 15 cancel-eligibility + fixed BookingPage integration test).
+- 88/88 Vitest tests passing across 14 suites.
 
-## Pending (lost work from previous un-pushed chat)
-- Payment History widget + Dashboard Dark Premium redesign + FailedBookingsBanner + svp-proxy GET /payments — NOT yet restored in this workspace. User may pull from GitHub (old chat "Save to GitHub") or ask for re-implementation.
+## Pending
+- svp-proxy `GET /payments` route added in code — user must deploy the edge function to Supabase for the live endpoint (frontend auto-falls back to reservation-embedded payments until then).
 
 ## Backlog
 - P2 — Obtain fresh SVP API Bearer token for live e2e verification (current Postman token returns 401).

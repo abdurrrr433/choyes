@@ -394,6 +394,17 @@ export default function ReservationsPage() {
     }
   }
 
+  // My Bookings shows ONLY paid / credit-available reservations. Failed or
+  // pending payment attempts are hidden here — they surface on the Booking
+  // page's FailedBookingsBanner with a Retry Payment button instead.
+  const visibleItems = items.filter((item) => {
+    const paymentType = getPaymentStatus(item).type;
+    if (paymentType !== "failed" && paymentType !== "pending") return true;
+    const rid = String(getReservationId(item) || "");
+    return Boolean(creditByReservationId[rid]?.hasCredit);
+  });
+  const hiddenCount = items.length - visibleItems.length;
+
   return (
     <div className="page-shell">
       <div className="page-card">
@@ -417,9 +428,21 @@ export default function ReservationsPage() {
         {!loading && !items.length ? (
           <div className="empty-card">No reservations are available to show.</div>
         ) : null}
+        {!loading && items.length && !visibleItems.length ? (
+          <div className="empty-card">
+            No paid bookings to show. {hiddenCount} reservation{hiddenCount > 1 ? "s have" : " has"} an
+            unfinished (failed/pending) payment — open the <Link to="/exam/booking">Booking page</Link> to retry payment.
+          </div>
+        ) : null}
+        {!loading && visibleItems.length && hiddenCount > 0 ? (
+          <div className="status-card" style={{ background: "#fff7ed", color: "#7c2d12", border: "1px solid #fdba74" }}>
+            {hiddenCount} reservation{hiddenCount > 1 ? "s are" : " is"} hidden because payment failed or is pending.
+            Retry from the <Link to="/exam/booking">Booking page</Link>.
+          </div>
+        ) : null}
 
         <div className="reservation-grid">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const rid = getReservationId(item);
             const sid = getSessionId(item);
             const paymentStatus = getPaymentStatus(item);

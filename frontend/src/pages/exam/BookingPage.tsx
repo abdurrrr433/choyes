@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { api, getSession, getBackendUrl, getProxyPrefix } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
 import { extractTestCenterId } from "@/lib/test-centers";
+import FailedBookingsBanner from "./FailedBookingsBanner";
 import {
   pickArray, normalizeOccupation, normalizeDateValue,
   normalizeAvailableDateEntries, getSessionId, getSessionSiteId, getSessionSiteCity,
@@ -1190,6 +1191,8 @@ export default function BookingPage() {
 
         {status ? <div className="notice notice--ok">{status}</div> : null}
         {error ? <div className="notice notice--error">{error}</div> : null}
+
+        <FailedBookingsBanner onRetryPayment={(rid) => openPaymentPage(rid)} />
 
         <div className="form-grid">
           <div className="field-block">

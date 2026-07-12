@@ -120,6 +120,36 @@ user_problem_statement: |
     - Edge-function / svp-proxy setup should stay as-is.
 
 frontend:
+  - task: "Payment History + Dashboard Dark Premium redesign + FailedBookingsBanner + My Bookings paid filter"
+    implemented: true
+    working: true
+    file: "frontend/src/pages/DashboardPage.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: |
+            Re-implemented lost-chat feature set:
+            - NEW lib/payments.ts: fetchPaymentHistory() tries svp-proxy GET /payments,
+              falls back to extracting reservation-embedded payments; classifyPaymentStatus
+              (pending checked BEFORE success so "unpaid" != paid); summarizePayments.
+            - NEW styles/dashboard-premium.css: isolated .dp-* namespace (deep navy + gold,
+              glassmorphic cards, gradient hero, animated glow) — no leak to legacy pages.
+            - REWRITE pages/DashboardPage.tsx: dark premium layout, 4 stat cards
+              (Total/Successful/Failed/Pending), Payment History table (payment ID,
+              reservation, occupation, timestamp, amount+currency, method, status badge).
+            - NEW pages/exam/FailedBookingsBanner.tsx on BookingPage: failed/pending
+              reservations with Retry Payment button reusing openPaymentPage().
+            - ReservationsPage: visibleItems filter — only paid/credit-available shown;
+              hidden count notice links to Booking page for retry.
+            - svp-proxy: added GET /payments list route (requires user Supabase deploy;
+              frontend falls back automatically until then).
+            Verified: 88/88 vitest (6 new payments-lib tests), tsc clean, yarn build OK,
+            dashboard screenshot confirms Dark Premium render. Live payment data needs a
+            real SVP session (fake-token screenshot showed expected 'Invalid signature').
+
   - task: "ReservationsPage Cancel Reservation button eligibility (new SVP shape)"
     implemented: true
     working: true
