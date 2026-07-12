@@ -36,7 +36,7 @@ vi.mock("@/lib/api", () => {
         },
       };
     }
-    if (path.startsWith("/exam-sessions")) {
+    if (path.startsWith("/t2hub/pacc-exam-sessions") || path.startsWith("/exam-sessions?")) {
       // list returns sessions with site_id null (the SVP gap we are filling in)
       return {
         exam_sessions: [
@@ -62,13 +62,23 @@ vi.mock("@/integrations/supabase/client", () => {
     { site_id: 107, name: "Technical Training Centre (TTC), Bogura", city: "Bogura" },
   ];
   const from = () => {
+    let filtered: any[] = rows;
     const chain: any = {
       select() {
         return chain;
       },
+      eq(col: string, val: any) {
+        filtered = filtered.filter(
+          (row: any) => String(row[col as keyof typeof row]) === String(val)
+        );
+        return chain;
+      },
+      order() {
+        return Promise.resolve({ data: filtered, error: null });
+      },
       in(col: string, vals: any[]) {
         return Promise.resolve({
-          data: rows.filter((row: any) =>
+          data: filtered.filter((row: any) =>
             vals.map(String).includes(String(row[col as keyof typeof row]))
           ),
           error: null,
@@ -111,13 +121,18 @@ describe("BookingPage integration: sessionsWithResolvedCenters → UI", () => {
 
     // Session dropdown reflects the same resolved name + stamped site_id,
     // proving resolveSessionCenter wrote site_id onto the session object.
-    const opts = Array.from(document.querySelectorAll("option")) as HTMLOptionElement[];
-    const sessionOpt = opts.find(
-      (o) =>
-        o.textContent?.includes("Session #9001") &&
-        o.textContent?.includes("Site #107") &&
-        o.textContent?.includes("Technical Training Centre (TTC), Bogura")
+    await waitFor(
+      () => {
+        const opts = Array.from(document.querySelectorAll("option")) as HTMLOptionElement[];
+        const sessionOpt = opts.find(
+          (o) =>
+            o.value === "9001" &&
+            o.textContent?.includes("Site #107") &&
+            o.textContent?.includes("Technical Training Centre (TTC), Bogura")
+        );
+        expect(sessionOpt).toBeTruthy();
+      },
+      { timeout: 5000 }
     );
-    expect(sessionOpt).toBeTruthy();
   });
 });
