@@ -246,6 +246,53 @@ frontend:
           Conclusion: Access Control dashboard redesign and account system are ready
           for production. No source files were changed during verification.
 
+  - task: "SVP registration payload — date format + contact_to_confirm enum + country_code dialing-code fix"
+    implemented: true
+    working: true
+    file: "frontend/src/lib/registration-payload.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "user"
+          comment: |
+            Postman capture of a real SVP registration submission revealed 3 payload bugs:
+              1. date_of_birth / passport_expiration_date sent as YYYY-MM-DD (HTML default),
+                 but SVP wants DD/MM/YYYY (capture: 28/02/1991, 04/03/2032).
+              2. contact_to_confirm was the user's actual email — must be enum "email".
+              3. country_code was ISO 2-letter ("BD") — capture showed dialing code ("+880").
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Fix applied via new /app/frontend/src/lib/registration-payload.ts (toApiDate +
+            resolveCountryDialingCode). RegisterPage.tsx imports them; contact_to_confirm is
+            now the literal "email". 11 new vitest tests + 76 pre-existing all green (87/87).
+            tsc --noEmit clean. Awaiting testing_agent confirmation.
+        - working: true
+          agent: "testing"
+          comment: |
+            Unit-test-driven verification completed successfully. All 3 payload bugs confirmed fixed.
+
+            Step A — Regression suite: 11/11 tests passed in registration-payload.test.ts
+              ✓ toApiDate converts YYYY-MM-DD → DD/MM/YYYY (28/02/1991, 04/03/2032 per Postman capture)
+              ✓ Empty input handling, manual-typed values pass-through, malformed ISO guards
+              ✓ resolveCountryDialingCode prefers phone_code/dialing_code/calling_code/etc with "+" prefix
+              ✓ Bangladesh case: phone_code "880" → "+880" (not ISO "BD")
+              ✓ Fallback to legacy .code/.country_code when no dialing field present
+              ✓ Null/undefined/non-object safety, blank field skipping, numeric code handling
+
+            Step B — Full suite: 87/87 tests passed across 14 test files (no regressions)
+
+            Step C — Static verification (grep):
+              ✓ contact_to_confirm set to literal "email" (line 74, NOT form.email)
+              ✓ toApiDate() routes both date_of_birth and passport_expiration_date (line 50 in appendCommon)
+              ✓ resolveCountryDialingCode() used in Country select onChange (line 85) AND appendCommon country_code (line 53)
+              ✓ registration-payload.ts exports exactly toApiDate + resolveCountryDialingCode (no default, no side effects)
+
+            No browser E2E attempted (SVP API token expired per PRD backlog P2; 401 expected for live calls).
+            No TypeScript errors, no missing files, no test regressions. Fix is production-ready.
+
 metadata:
   created_by: "main_agent"
   version: "1.1"
@@ -253,8 +300,7 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "BookingPage city filter + test center display for new SVP API shape"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -268,3 +314,51 @@ agent_communication:
       No changes to svp-proxy / Supabase edge functions / UI layout.
       Frontend supervisor was failing pre-existing because of missing `start` script in
       package.json — added it; service is now RUNNING.
+  - agent: "main"
+    message: |
+      New task ready for testing: SVP registration payload — 3 fixes driven by a Postman
+      capture of a real submission.
+
+      Files:
+        - /app/frontend/src/lib/registration-payload.ts   (NEW: toApiDate, resolveCountryDialingCode)
+        - /app/frontend/src/lib/registration-payload.test.ts (NEW: 11 vitest tests)
+        - /app/frontend/src/pages/auth/RegisterPage.tsx   (imports the two helpers + contact_to_confirm="email")
+
+      Fix 1 — Date format: <input type="date"> emits YYYY-MM-DD but SVP wants DD/MM/YYYY
+              (capture: 28/02/1991 for date_of_birth, 04/03/2032 for passport_expiration_date).
+              appendCommon() now routes date_of_birth and passport_expiration_date through
+              toApiDate() before FormData.append.
+
+      Fix 2 — contact_to_confirm enum: was sending user's actual email (form.email); capture
+              proved this is a method enum like preferable_contact — literal string "email".
+
+      Fix 3 — country_code dialing code: capture showed "+880" for Bangladesh, not "BD".
+              resolveCountryDialingCode() prefers phone_code / dialing_code / calling_code /
+              dial_code / phone_prefix / international_code / phonecode (with "+" prepend),
+              then falls back to legacy `.code` / `.country_code` ISO fields.
+
+      Pre-testing verification:
+        - 87/87 vitest tests pass across 14 suites (11 new + 76 pre-existing).
+        - tsc --noEmit clean.
+
+      Testing scope for the testing_agent:
+        - Run `npx vitest run src/lib/registration-payload.test.ts` in /app/frontend and
+          confirm all 11 tests pass. This is the authoritative check — payload-shape unit tests.
+        - Then run the full suite `npx vitest run` and confirm 87/87.
+        - No live SVP call is required (SVP API token is expired per PRD backlog).
+        - No backend / MongoDB touch needed; this is pure frontend payload shaping.
+  - agent: "testing"
+    message: |
+      SVP registration payload fix verified and confirmed working via unit tests.
+      
+      All 3 bugs fixed:
+        1. Date format: toApiDate() converts YYYY-MM-DD → DD/MM/YYYY ✓
+        2. contact_to_confirm: literal "email" enum (not user's email address) ✓
+        3. country_code: dialing code "+880" (not ISO "BD") ✓
+      
+      Test results:
+        - 11/11 regression tests passed (registration-payload.test.ts)
+        - 87/87 full suite passed (no regressions)
+        - All static verification checks passed (grep confirmed correct usage)
+      
+      No browser E2E needed (SVP token expired). Fix is production-ready.

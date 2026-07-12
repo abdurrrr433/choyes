@@ -1,18 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiAuthForm, apiAuthGet } from "@/lib/api";
+import { resolveCountryDialingCode, toApiDate } from "@/lib/registration-payload";
 import "@/styles/registration-premium.css";
 
 function pickArray(payload: any): any[] {
   for (const value of [payload, payload?.data, payload?.countries, payload?.data?.countries, payload?.items]) if (Array.isArray(value)) return value;
   return [];
-}
-function toApiDate(value: string): string {
-  // Convert HTML <input type="date"> "YYYY-MM-DD" -> SVP-required "DD/MM/YYYY".
-  // Leave any non-matching value untouched so users who type manually still work.
-  if (!value) return "";
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
 }
 function deepValue(payload: any, keys: string[]): string {
   const wanted = new Set(keys);
@@ -56,7 +50,7 @@ export default function RegisterPage() {
       if (key === "date_of_birth" || key === "passport_expiration_date") data.append(key, toApiDate(value));
       else data.append(key, value);
     });
-    data.set("country_code", form.country_code || selectedCountry?.code || selectedCountry?.country_code || "");
+    data.set("country_code", form.country_code || resolveCountryDialingCode(selectedCountry));
     data.set("first_name_not_specified", "false"); data.set("last_name_not_specified", "false");
     if (passportFile) data.set("file", passportFile); if (profileImage) data.set("image", profileImage);
   }
@@ -88,7 +82,7 @@ export default function RegisterPage() {
 
   return <main className="rg-shell"><section className="rg-panel"><header><span>SVP LABOR ONBOARDING</span><h1>Create your accreditation account</h1><p>Live registration, identity validation and OTP handoff through the official SVP APIs.</p></header><div className="rg-progress"><b className={step>=1?"on":""}>1 <small>Identity</small></b><i/><b className={step>=2?"on":""}>2 <small>Account</small></b><i/><b className={step>=3?"on":""}>3 <small>Complete</small></b></div>
     {step===1 && <form onSubmit={validateIdentity} className="rg-form"><h2>Personal & passport information</h2><div className="rg-grid">
-      <label>Country<select required value={form.country_id} onChange={(e)=>{const c=countries.find(x=>String(x.id)===e.target.value);setForm((old)=>({...old,country_id:e.target.value,country_code:c?.code||c?.country_code||"",nationality_id:""}));}}><option value="">Select country</option>{countries.map(c=><option key={c.id} value={c.id}>{c.name||c.english_name}</option>)}</select></label>
+      <label>Country<select required value={form.country_id} onChange={(e)=>{const c=countries.find(x=>String(x.id)===e.target.value);setForm((old)=>({...old,country_id:e.target.value,country_code:resolveCountryDialingCode(c),nationality_id:""}));}}><option value="">Select country</option>{countries.map(c=><option key={c.id} value={c.id}>{c.name||c.english_name}</option>)}</select></label>
       <label>Nationality<select required disabled={!form.country_id} value={form.nationality_id} onChange={(e)=>update("nationality_id",e.target.value)}><option value="">{form.country_id?"Select nationality":"Select country first"}</option>{nationalities.map(n=><option key={n.id} value={n.id}>{n.english_name||n.arabic_name}</option>)}</select></label>
       <label>First name<input required value={form.first_name} onChange={(e)=>update("first_name",e.target.value)}/></label><label>Last name<input required value={form.last_name} onChange={(e)=>update("last_name",e.target.value)}/></label>
       <label>Date of birth<input required type="date" value={form.date_of_birth} onChange={(e)=>update("date_of_birth",e.target.value)}/></label><label>Sex<select value={form.sex} onChange={(e)=>update("sex",e.target.value)}><option value="male">Male</option><option value="female">Female</option></select></label>
