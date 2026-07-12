@@ -440,28 +440,28 @@ export default function ReservationsPage() {
                   <span className="rb-status">{getStatus(item)}</span>
                 </div>
                 <div className="detail-list rb-details">
-                  <div><span>Test center</span><strong>{getCenterName(item)}</strong></div>
-                  <div><span>Exam date</span><strong>{getDate(item) || "-"}</strong></div>
-                  <div><span>Occupation</span><strong>{item?.occupation?.english_name || item?.occupation?.name || getOccupationId(item) || "-"}</strong></div>
-                  <div><span>Session ID</span><strong>{getSessionId(item) || "-"}</strong></div>
-                  <div><span>Language</span><strong>{getLanguageCode(item)}</strong></div>
-                  <div><span>Site ID</span><strong>{getSiteId(item) || "-"}</strong></div>
-                  <div><span>Methodology</span><strong>{getMethodology(item) || "-"}</strong></div>
-                  <div>
+                  <div data-icon="📍" data-tone="cyan"><span>Test center</span><strong>{getCenterName(item)}</strong></div>
+                  <div data-icon="📅" data-tone="gold"><span>Exam date</span><strong>{getDate(item) || "-"}</strong></div>
+                  <div data-icon="💼" data-tone="violet"><span>Occupation</span><strong>{item?.occupation?.english_name || item?.occupation?.name || getOccupationId(item) || "-"}</strong></div>
+                  <div data-icon="🆔" data-tone="blue"><span>Session ID</span><strong>{getSessionId(item) || "-"}</strong></div>
+                  <div data-icon="🌐" data-tone="teal"><span>Language</span><strong>{getLanguageCode(item)}</strong></div>
+                  <div data-icon="🏢" data-tone="orange"><span>Site ID</span><strong>{getSiteId(item) || "-"}</strong></div>
+                  <div data-icon="🖥️" data-tone="pink"><span>Methodology</span><strong>{getMethodology(item) || "-"}</strong></div>
+                  <div data-icon="🎫" data-tone="gold">
                     <span>Reservation Credits</span>
                     <strong>{creditInfo?.checked ? creditInfo.reservationCredits : "Checking..."}</strong>
                   </div>
-                  <div>
+                  <div data-icon="💳" data-tone={creditAvailable || paymentStatus.type === "paid" ? "green" : paymentStatus.type === "failed" ? "red" : "gold"}>
                     <span>Payment</span>
                     <strong style={{
-                      color: creditAvailable || paymentStatus.type === "paid" ? "#15803d" : paymentStatus.type === "failed" ? "#b91c1c" : "#92400e",
+                      color: creditAvailable || paymentStatus.type === "paid" ? "#a7f3d0" : paymentStatus.type === "failed" ? "#fecdd3" : "#fde68a",
                     }}>
                       {creditAvailable ? "Credit available" : paymentStatus.label}
                     </strong>
                   </div>
                 </div>
                 {showPayButton ? (
-                  <button className="primary-btn" type="button" onClick={() => startPayment(item)}
+                  <button className="primary-btn rb-pay-btn" type="button" onClick={() => startPayment(item)}
                     disabled={payingId === String(rid)} style={{ marginBottom: "10px", width: "100%" }}>
                     {payingId === String(rid) ? "Opening payment..." : paymentStatus.type === "failed" ? "Retry Payment" : "Pay Now"}
                   </button>
