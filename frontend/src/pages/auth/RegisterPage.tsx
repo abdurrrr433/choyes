@@ -7,6 +7,13 @@ function pickArray(payload: any): any[] {
   for (const value of [payload, payload?.data, payload?.countries, payload?.data?.countries, payload?.items]) if (Array.isArray(value)) return value;
   return [];
 }
+function toApiDate(value: string): string {
+  // Convert HTML <input type="date"> "YYYY-MM-DD" -> SVP-required "DD/MM/YYYY".
+  // Leave any non-matching value untouched so users who type manually still work.
+  if (!value) return "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
+}
 function deepValue(payload: any, keys: string[]): string {
   const wanted = new Set(keys);
   const queue = [payload];
@@ -43,7 +50,12 @@ export default function RegisterPage() {
   }, [form.country_id]);
   function update(key: string, value: string) { setForm((old) => ({ ...old, [key]: value })); }
   function appendCommon(data: FormData) {
-    Object.entries(form).forEach(([key, value]) => { if (value) data.append(key, value); });
+    Object.entries(form).forEach(([key, value]) => {
+      if (!value) return;
+      // Postman capture confirmed SVP wants DD/MM/YYYY for date fields; <input type="date"> gives YYYY-MM-DD.
+      if (key === "date_of_birth" || key === "passport_expiration_date") data.append(key, toApiDate(value));
+      else data.append(key, value);
+    });
     data.set("country_code", form.country_code || selectedCountry?.code || selectedCountry?.country_code || "");
     data.set("first_name_not_specified", "false"); data.set("last_name_not_specified", "false");
     if (passportFile) data.set("file", passportFile); if (profileImage) data.set("image", profileImage);
@@ -65,7 +77,7 @@ export default function RegisterPage() {
     try {
       const data = new FormData(); appendCommon(data);
       if (confirmationId) data.set("confirmation_id", confirmationId);
-      data.set("contact_to_confirm", form.email || form.phone_number); data.set("preferable_contact", "email");
+      data.set("contact_to_confirm", "email"); data.set("preferable_contact", "email");
       data.set("terms_and_privacy_accepted", "true"); data.set("data_accuracy_acknowledged", "true"); data.set("onboarding_video_seen", "false"); data.set("step", "contact_confirmation");
       await apiAuthForm("/registration", data);
       sessionStorage.setItem("portal_login", form.email); sessionStorage.setItem("portal_password", form.password);
