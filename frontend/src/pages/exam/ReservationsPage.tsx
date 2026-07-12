@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, getSession, getBackendUrl, getProxyPrefix } from "@/lib/api";
+import "@/styles/reservations-premium.css";
 
 function pickArray(payload: any): any[] {
   if (Array.isArray(payload)) return payload;
@@ -394,20 +395,27 @@ export default function ReservationsPage() {
   }
 
   return (
-    <div className="page-shell">
-      <div className="page-card">
-        <div className="page-head">
+    <div className="page-shell rb-shell">
+      <div className="page-card rb-board">
+        <div className="page-head rb-hero">
           <div>
-            <p className="eyebrow">My bookings</p>
-            <h1>Booked exams</h1>
-            <p className="muted">Your existing bookings should appear here automatically when the page opens.</p>
+            <p className="eyebrow">RESERVATION COMMAND CENTRE</p>
+            <h1>My exam journey</h1>
+            <p className="muted">Track every reservation, payment and ticket from one calm, focused workspace.</p>
           </div>
-          <div className="actions">
+          <div className="actions rb-hero__actions">
             <Link to="/dashboard" className="secondary-btn">Dashboard</Link>
             <button className="secondary-btn" type="button" onClick={loadReservations} disabled={loading}>
               {loading ? "Loading..." : "Refresh"}
             </button>
           </div>
+          <div className="rb-orbit rb-orbit--one" /><div className="rb-orbit rb-orbit--two" />
+        </div>
+
+        <div className="rb-summary">
+          <div><small>TOTAL BOOKINGS</small><strong>{items.length}</strong><span>All reservations</span></div>
+          <div><small>READY / PAID</small><strong>{items.filter((item) => getPaymentStatus(item).type === "paid").length}</strong><span>Ticket-ready exams</span></div>
+          <div><small>NEEDS ATTENTION</small><strong>{items.filter((item) => ["failed", "pending"].includes(getPaymentStatus(item).type)).length}</strong><span>Payment follow-up</span></div>
         </div>
 
         {success ? <div className="status-card status-success" style={{ background: "#d4edda", color: "#155724", border: "1px solid #c3e6cb" }}>{success}</div> : null}
@@ -417,7 +425,7 @@ export default function ReservationsPage() {
           <div className="empty-card">No reservations are available to show.</div>
         ) : null}
 
-        <div className="reservation-grid">
+        <div className="reservation-grid rb-grid">
           {items.map((item) => {
             const rid = getReservationId(item);
             const sid = getSessionId(item);
@@ -426,12 +434,12 @@ export default function ReservationsPage() {
             const creditAvailable = Boolean(creditInfo?.hasCredit);
             const showPayButton = canPayReservation(item) && !creditAvailable;
             return (
-              <div className="reservation-card" key={String(rid || sid || "reservation-item")}>
-                <div className="reservation-top">
-                  <h2>#{rid || "-"}</h2>
-                  <span>{getStatus(item)}</span>
+              <div className={`reservation-card rb-card rb-card--${paymentStatus.type}`} key={String(rid || sid || "reservation-item")}>
+                <div className="reservation-top rb-card__head">
+                  <div><small>RESERVATION</small><h2>#{rid || "-"}</h2></div>
+                  <span className="rb-status">{getStatus(item)}</span>
                 </div>
-                <div className="detail-list">
+                <div className="detail-list rb-details">
                   <div><span>Test center</span><strong>{getCenterName(item)}</strong></div>
                   <div><span>Exam date</span><strong>{getDate(item) || "-"}</strong></div>
                   <div><span>Occupation</span><strong>{item?.occupation?.english_name || item?.occupation?.name || getOccupationId(item) || "-"}</strong></div>
