@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAccessAuth } from "@/contexts/AccessAuthContext";
+import "@/styles/auth-premium.css";
 
 export default function AccessLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [msg, setMsg] = useState("");
+  const [msgType, setMsgType] = useState<"info" | "ok" | "error">("info");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAccessAuth();
@@ -24,62 +27,119 @@ export default function AccessLoginPage() {
     setLoading(true);
     setMsg("");
     try {
-      const res = await login(email, password);
+      await login(email, password);
       const user = JSON.parse(localStorage.getItem("access_user") || "{}");
       if (user.role === "ADMIN" || user.role === "AGENCY") {
-        setMsg("Login successful. Redirecting to dashboard...");
+        setMsg("Login successful. Redirecting to dashboard…");
+        setMsgType("ok");
         navigate("/access/dashboard");
       } else {
-        // Regular users go through SVP login
         sessionStorage.setItem("portal_login", email);
-        setMsg("Login successful. Redirecting to verification...");
+        setMsg("Login successful. Redirecting to SVP verification…");
+        setMsgType("ok");
         navigate("/auth/login");
       }
     } catch (err: any) {
-      setMsg(err?.data?.message || err?.message || "Login failed");
+      const detail = err?.data?.message || err?.message || "Login failed";
+      setMsg(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setMsgType("error");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="auth-shell">
-      <div className="auth-panel">
-        <div className="auth-heading">
-          <h1>Access Control Login</h1>
-          <p>Sign in with your admin or agency account.</p>
+    <main className="ap-shell">
+      <aside className="ap-brand-panel">
+        <div className="ap-brand-head">
+          <div className="ap-brand-mark">A</div>
+          <div className="ap-brand-title">
+            <strong>Access Control</strong>
+            <span>Admin & agency portal</span>
+          </div>
         </div>
 
-        <form className="auth-form" onSubmit={submit}>
-          <label>Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Enter your email"
-            required
-          />
+        <div className="ap-brand-copy">
+          <span className="ap-brand-eyebrow">Restricted area · Authorized only</span>
+          <h2>Elevated access to the <em>accreditation</em> command centre</h2>
+          <p>Administrators and agencies sign in here to manage users, agencies, test centres and section-level booking rules.</p>
+        </div>
 
-          <label>Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
-            required
-          />
-
-          <button type="submit" className="auth-submit" disabled={loading}>
-            {loading ? "Signing in..." : "Sign in"}
-          </button>
-          <p className="auth-message">{msg}</p>
-          <div className="mt-2 text-center">
-            <Link to="/access/forgot-password" className="auth-link">
-              Forgot password?
-            </Link>
+        <div className="ap-brand-features">
+          <div className="ap-brand-feature">
+            <div className="ap-brand-feature-icon">◆</div>
+            <div className="ap-brand-feature-copy">
+              <strong>Role-based control</strong>
+              <span>Admin, agency and user permissions are enforced everywhere.</span>
+            </div>
           </div>
-        </form>
-      </div>
-    </div>
+          <div className="ap-brand-feature">
+            <div className="ap-brand-feature-icon">⊡</div>
+            <div className="ap-brand-feature-copy">
+              <strong>Fleet-wide visibility</strong>
+              <span>Manage centres, sessions and section rules from one panel.</span>
+            </div>
+          </div>
+          <div className="ap-brand-feature">
+            <div className="ap-brand-feature-icon">⇄</div>
+            <div className="ap-brand-feature-copy">
+              <strong>Auto SVP hand-off</strong>
+              <span>Regular users are routed straight to the SVP login after sign in.</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="ap-brand-foot">
+          <span>© {new Date().getFullYear()} Accreditation Suite</span>
+          <span>Secured portal</span>
+        </div>
+      </aside>
+
+      <section className="ap-form-panel">
+        <div className="ap-form-card">
+          <div className="ap-form-header">
+            <h1>Access Control Login</h1>
+            <p>Sign in with your admin or agency account. Regular users will be redirected to the SVP verification flow.</p>
+          </div>
+
+          <form className="ap-form" onSubmit={submit}>
+            <div className="ap-field">
+              <label htmlFor="acc-email">Email</label>
+              <input id="acc-email" type="email" autoComplete="username"
+                value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com" required />
+            </div>
+
+            <div className="ap-field">
+              <label htmlFor="acc-password">Password</label>
+              <div className="ap-input-wrap">
+                <input id="acc-password" type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password" required />
+                <button type="button" className="ap-input-toggle"
+                  onClick={() => setShowPassword((v) => !v)}>
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" className="ap-submit" disabled={loading}>
+              {loading ? "Signing in…" : "Sign in"}
+            </button>
+
+            {msg ? (
+              <div className={`ap-message${msgType === "error" ? " ap-message--error" : msgType === "ok" ? " ap-message--ok" : ""}`}>
+                {msg}
+              </div>
+            ) : null}
+
+            <div className="ap-footer">
+              <Link to="/access/forgot-password" className="ap-link">Forgot password?</Link>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
   );
 }

@@ -4,15 +4,24 @@ import { Link } from "react-router-dom";
 import { apiAuth } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { getPendingAuth, setPendingAuth } from "@/lib/pending-auth";
+import "@/styles/auth-premium.css";
 
 export default function LoginPage() {
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [otpMethod, setOtpMethod] = useState("email");
   const [msg, setMsg] = useState("");
+  const [msgType, setMsgType] = useState<"info" | "ok" | "error">("info");
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [mode, setMode] = useState<"otp" | "token">("otp");
+
   const [tokenLogin, setTokenLogin] = useState("");
   const [svpToken, setSvpToken] = useState("");
   const [tokenMsg, setTokenMsg] = useState("");
+  const [tokenMsgType, setTokenMsgType] = useState<"info" | "ok" | "error">("info");
+  const [tokenSubmitting, setTokenSubmitting] = useState(false);
+
   const navigate = useNavigate();
   const { login: authLogin } = useAuth();
 
@@ -30,100 +39,204 @@ export default function LoginPage() {
     setLogin(pending?.login || portalLogin);
     setPassword(pending?.password || "");
     if (pending?.otpMethod) setOtpMethod(pending.otpMethod);
+    if (pending?.login) setTokenLogin(pending.login);
   }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     openYopmailInbox(login);
+    setSubmitting(true);
     setMsg("Sending OTP...");
+    setMsgType("info");
     try {
       await apiAuth("/login", { login, password, otp_method: otpMethod });
       setPendingAuth({ login, password, otpMethod });
       setMsg("OTP sent. Check your email or SMS.");
+      setMsgType("ok");
       navigate("/auth/otp");
     } catch (err: any) {
-      setMsg(JSON.stringify(err.data || err.message));
+      const detail = err?.data?.message || err?.data?.error || err?.message || "Login failed";
+      setMsg(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setMsgType("error");
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function submitToken(e: React.FormEvent) {
     e.preventDefault();
     openYopmailInbox(tokenLogin);
+    setTokenSubmitting(true);
     setTokenMsg("Verifying bearer token...");
+    setTokenMsgType("info");
     try {
       const res = await apiAuth("/token-login", { login: tokenLogin, token: svpToken });
       authLogin(res.accessToken, res.user || res);
       setTokenMsg("Login successful. Redirecting...");
+      setTokenMsgType("ok");
       navigate("/dashboard");
     } catch (err: any) {
-      setTokenMsg(JSON.stringify(err.data || err.message));
+      const detail = err?.data?.message || err?.data?.error || err?.message || "Token login failed";
+      setTokenMsg(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setTokenMsgType("error");
+    } finally {
+      setTokenSubmitting(false);
     }
   }
 
   return (
-    <div className="auth-shell">
-      <div className="auth-panel">
-        <div className="auth-heading">
-          <h1>Welcome back</h1>
-          <p>Sign in with your SVP account and request OTP verification.</p>
+    <main className="ap-shell">
+      {/* Left – Brand showcase */}
+      <aside className="ap-brand-panel">
+        <div className="ap-brand-head">
+          <div className="ap-brand-mark">S</div>
+          <div className="ap-brand-title">
+            <strong>SVP Accreditation</strong>
+            <span>Labor exam portal</span>
+          </div>
         </div>
 
-        <form className="auth-form" onSubmit={submit}>
-          <label>Email</label>
-          <input
-            value={login}
-            onChange={(e) => setLogin(e.target.value)}
-            placeholder="Enter your email"
-            required
-          />
-
-          <label>Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
-            required
-          />
-
-          <label>OTP Verify Option</label>
-          <select value={otpMethod} onChange={(e) => setOtpMethod(e.target.value)}>
-            <option value="email">Email</option>
-            <option value="sms">SMS</option>
-          </select>
-
-          <button type="submit" className="auth-submit">Sign in</button>
-          <p className="auth-message">{msg}</p>
-        </form>
-        <p className="auth-message">New labor applicant? <Link to="/auth/register">Create an SVP account</Link></p>
-
-        <div className="auth-heading" style={{ marginTop: "1rem" }}>
-          <h2>Direct Token Login</h2>
-          <p>Paste your SVP bearer token from official login and login instantly.</p>
+        <div className="ap-brand-copy">
+          <span className="ap-brand-eyebrow">Verified access · SVP live</span>
+          <h2>Sign in to your <em>professional</em> accreditation account</h2>
+          <p>Manage bookings, review reservations and track every payment attempt through the official Saudi Skill Verification Program.</p>
         </div>
 
-        <form className="auth-form" onSubmit={submitToken}>
-          <label>Account login (email)</label>
-          <input
-            value={tokenLogin}
-            onChange={(e) => setTokenLogin(e.target.value)}
-            placeholder="Enter your email or login"
-            required
-          />
+        <div className="ap-brand-features">
+          <div className="ap-brand-feature">
+            <div className="ap-brand-feature-icon">✓</div>
+            <div className="ap-brand-feature-copy">
+              <strong>Live SVP integration</strong>
+              <span>Real-time OTP delivery and session tokens.</span>
+            </div>
+          </div>
+          <div className="ap-brand-feature">
+            <div className="ap-brand-feature-icon">◈</div>
+            <div className="ap-brand-feature-copy">
+              <strong>Secure by design</strong>
+              <span>Encrypted transport and short-lived bearer tokens.</span>
+            </div>
+          </div>
+          <div className="ap-brand-feature">
+            <div className="ap-brand-feature-icon">☰</div>
+            <div className="ap-brand-feature-copy">
+              <strong>One place for everything</strong>
+              <span>Bookings, reservations and payments in one premium workspace.</span>
+            </div>
+          </div>
+        </div>
 
-          <label>SVP Bearer Token</label>
-          <textarea
-            value={svpToken}
-            onChange={(e) => setSvpToken(e.target.value)}
-            placeholder="Paste bearer token from official SVP session"
-            rows={4}
-            required
-          />
+        <div className="ap-brand-foot">
+          <span>© {new Date().getFullYear()} Accreditation Suite</span>
+          <span>Official SVP flow</span>
+        </div>
+      </aside>
 
-          <button type="submit" className="auth-submit">Login with token</button>
-          <p className="auth-message">{tokenMsg}</p>
-        </form>
-      </div>
-    </div>
+      {/* Right – Form */}
+      <section className="ap-form-panel">
+        <div className="ap-form-card">
+          <div className="ap-form-header">
+            <h1>Welcome back</h1>
+            <p>Sign in with your SVP account. Choose OTP or bearer-token verification below.</p>
+          </div>
+
+          <div className="ap-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={mode === "otp"}
+              className={`ap-tab${mode === "otp" ? " is-active" : ""}`}
+              onClick={() => setMode("otp")}>
+              OTP verification
+            </button>
+            <button type="button" role="tab" aria-selected={mode === "token"}
+              className={`ap-tab${mode === "token" ? " is-active" : ""}`}
+              onClick={() => setMode("token")}>
+              Bearer token
+            </button>
+          </div>
+
+          {mode === "otp" ? (
+            <form className="ap-form" onSubmit={submit}>
+              <div className="ap-field">
+                <label htmlFor="login-email">Email</label>
+                <input id="login-email" type="email" autoComplete="username"
+                  value={login} onChange={(e) => setLogin(e.target.value)}
+                  placeholder="you@example.com" required />
+              </div>
+
+              <div className="ap-field">
+                <label htmlFor="login-password">Password</label>
+                <div className="ap-input-wrap">
+                  <input id="login-password" type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    value={password} onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter your password" required />
+                  <button type="button" className="ap-input-toggle" aria-label="Toggle password"
+                    onClick={() => setShowPassword((v) => !v)}>
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="ap-field">
+                <label htmlFor="login-otp">OTP verify option</label>
+                <select id="login-otp" value={otpMethod} onChange={(e) => setOtpMethod(e.target.value)}>
+                  <option value="email">Email</option>
+                  <option value="sms">SMS</option>
+                </select>
+              </div>
+
+              <button type="submit" className="ap-submit" disabled={submitting}>
+                {submitting ? "Sending OTP…" : "Continue with OTP"}
+              </button>
+
+              {msg ? (
+                <div className={`ap-message${msgType === "error" ? " ap-message--error" : msgType === "ok" ? " ap-message--ok" : ""}`}>
+                  {msg}
+                </div>
+              ) : null}
+
+              <p className="ap-hint">
+                New labor applicant? <Link to="/auth/register">Create an SVP account</Link>
+              </p>
+            </form>
+          ) : (
+            <form className="ap-form" onSubmit={submitToken}>
+              <p className="ap-hint" style={{ textAlign: "left", marginBottom: 4 }}>
+                Paste your SVP bearer token from an official login and sign in instantly — no OTP required.
+              </p>
+
+              <div className="ap-field">
+                <label htmlFor="token-login">Account email</label>
+                <input id="token-login" type="email" value={tokenLogin}
+                  onChange={(e) => setTokenLogin(e.target.value)}
+                  placeholder="you@example.com" required />
+              </div>
+
+              <div className="ap-field">
+                <label htmlFor="token-value">SVP bearer token</label>
+                <textarea id="token-value" rows={4} value={svpToken}
+                  onChange={(e) => setSvpToken(e.target.value)}
+                  placeholder="Paste bearer token from your official SVP session" required />
+              </div>
+
+              <button type="submit" className="ap-submit" disabled={tokenSubmitting}>
+                {tokenSubmitting ? "Verifying token…" : "Login with token"}
+              </button>
+
+              {tokenMsg ? (
+                <div className={`ap-message${tokenMsgType === "error" ? " ap-message--error" : tokenMsgType === "ok" ? " ap-message--ok" : ""}`}>
+                  {tokenMsg}
+                </div>
+              ) : null}
+
+              <p className="ap-hint">
+                Don&apos;t have a token? Switch to <button type="button" className="ap-link"
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                  onClick={() => setMode("otp")}>OTP verification</button>.
+              </p>
+            </form>
+          )}
+        </div>
+      </section>
+    </main>
   );
 }

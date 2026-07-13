@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiAuth, clearSession, getSession } from "@/lib/api";
 import {
   fetchPaymentHistory,
@@ -27,6 +27,16 @@ function formatTimestamp(value: string) {
   });
 }
 
+function initialsFrom(text: string | undefined | null) {
+  if (!text) return "U";
+  const clean = String(text).trim();
+  if (!clean) return "U";
+  const parts = clean.split(/[\s@._-]+/).filter(Boolean);
+  const first = parts[0]?.charAt(0) || "U";
+  const second = parts[1]?.charAt(0) || "";
+  return (first + second).toUpperCase();
+}
+
 const BADGE_LABEL: Record<PaymentRecord["status"], string> = {
   success: "Successful",
   failed: "Failed",
@@ -40,6 +50,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [paymentsSource, setPaymentsSource] = useState<string>("");
@@ -50,7 +61,7 @@ export default function DashboardPage() {
     const { accessToken } = getSession();
     if (!accessToken) { navigate("/auth/login"); return; }
     const payload = decodeJwtPayload(accessToken);
-    setMe(payload ? { login: payload.login || "User" } : { login: "User" });
+    setMe(payload ? { login: payload.login || "User", name: payload.name, role: payload.role } : { login: "User" });
     setLoading(false);
     void loadPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,51 +98,135 @@ export default function DashboardPage() {
   }
 
   const summary = summarizePayments(payments);
+  const displayName = me?.name || me?.login || "User";
+  const initials = useMemo(() => initialsFrom(displayName), [displayName]);
 
   return (
-    <div className="dp-shell">
-      <aside className="dp-sidebar">
+    <div className={`dp-shell${menuOpen ? " dp-shell--menu-open" : ""}`}>
+      <div className="dp-backdrop" onClick={() => setMenuOpen(false)} />
+
+      <aside className={`dp-sidebar${menuOpen ? " dp-sidebar--open" : ""}`}>
         <div className="dp-brand">
-          <div className="dp-brand-mark" />
+          <div className="dp-brand-mark">S</div>
           <div>
             <strong>Professional</strong>
             <span>Accreditation</span>
           </div>
         </div>
+
         <nav className="dp-nav">
-          <Link className="dp-nav-item dp-nav-item--active" to="/dashboard">Account Dashboard</Link>
-          <Link className="dp-nav-item" to="/exam/reservations">My bookings</Link>
-          <Link className="dp-nav-item" to="/exam/booking">New booking</Link>
+          <div className="dp-nav-label">Overview</div>
+          <Link className="dp-nav-item dp-nav-item--active" to="/dashboard" onClick={() => setMenuOpen(false)}>
+            <span className="dp-nav-ico">◈</span> Account Dashboard
+          </Link>
+
+          <div className="dp-nav-label" style={{ marginTop: 12 }}>Exams</div>
+          <Link className="dp-nav-item" to="/exam/reservations" onClick={() => setMenuOpen(false)}>
+            <span className="dp-nav-ico">☰</span> My bookings
+          </Link>
+          <Link className="dp-nav-item" to="/exam/booking" onClick={() => setMenuOpen(false)}>
+            <span className="dp-nav-ico">+</span> New booking
+          </Link>
         </nav>
+
+        <div className="dp-side-foot">
+          <strong>Need a hand?</strong>
+          Every payment attempt is tracked below. Failed or pending payments can be retried from the booking page.
+        </div>
       </aside>
 
       <main className="dp-main">
         <header className="dp-topbar">
-          <div className="dp-user">
-            <div className="dp-avatar" />
-            <div>
-              <strong>{loading ? "Loading..." : me?.name || me?.login || "User"}</strong>
-              <span>{me?.role || "Labor"}</span>
+          <div className="dp-topbar-left">
+            <button className="dp-menu-btn" type="button" aria-label="Toggle menu" onClick={() => setMenuOpen((v) => !v)}>
+              ☰
+            </button>
+            <div className="dp-page-title">
+              <small>Overview</small>
+              Account dashboard
             </div>
           </div>
-          <button className="dp-logout" type="button" onClick={handleLogout} disabled={loggingOut}>
-            {loggingOut ? "Logging out..." : "Logout"}
-          </button>
+
+          <div className="dp-topbar-right">
+            <div className="dp-user">
+              <div className="dp-avatar">{initials}</div>
+              <div className="dp-user-copy">
+                <strong>{loading ? "Loading…" : displayName}</strong>
+                <span>{me?.role || "Labor"}</span>
+              </div>
+            </div>
+            <button className="dp-logout" type="button" onClick={handleLogout} disabled={loggingOut}>
+              {loggingOut ? "Logging out…" : "Logout"}
+            </button>
+          </div>
         </header>
 
         <section className="dp-hero">
-          <h1>Advance your career through professional accreditation</h1>
-          <p>Manage bookings, review reservations and track every payment attempt from one premium dashboard.</p>
-          <Link className="dp-hero-cta" to="/exam/booking">Start Verification</Link>
+          <div className="dp-hero-content">
+            <div>
+              <span className="dp-hero-eyebrow">Command centre</span>
+              <h1>Advance your career through <em>professional</em> accreditation</h1>
+              <p>Manage bookings, review reservations and track every payment attempt from one premium workspace — always in sync with the official SVP platform.</p>
+              <div className="dp-hero-actions">
+                <Link className="dp-hero-cta" to="/exam/booking">Start Verification →</Link>
+                <Link className="dp-hero-cta dp-hero-cta--ghost" to="/exam/reservations">View bookings</Link>
+              </div>
+            </div>
+            <div className="dp-hero-aside">
+              <div className="dp-hero-aside-title">Snapshot</div>
+              <div className="dp-hero-mini-stats">
+                <div className="dp-hero-mini-stat">
+                  <span>Total payments</span>
+                  <strong>{paymentsLoading ? "…" : summary.total}</strong>
+                </div>
+                <div className="dp-hero-mini-stat">
+                  <span>Successful</span>
+                  <strong style={{ color: "var(--dp-green)" }}>{paymentsLoading ? "…" : summary.success}</strong>
+                </div>
+                <div className="dp-hero-mini-stat">
+                  <span>Pending</span>
+                  <strong style={{ color: "var(--dp-amber)" }}>{paymentsLoading ? "…" : summary.pending}</strong>
+                </div>
+                <div className="dp-hero-mini-stat">
+                  <span>Failed</span>
+                  <strong style={{ color: "var(--dp-red)" }}>{paymentsLoading ? "…" : summary.failed}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
         {error ? <div className="dp-error">{error}</div> : null}
 
         <section className="dp-stats">
-          <div className="dp-stat dp-stat--gold"><span>Total payments</span><strong>{paymentsLoading ? "…" : summary.total}</strong></div>
-          <div className="dp-stat dp-stat--green"><span>Successful</span><strong>{paymentsLoading ? "…" : summary.success}</strong></div>
-          <div className="dp-stat dp-stat--red"><span>Failed</span><strong>{paymentsLoading ? "…" : summary.failed}</strong></div>
-          <div className="dp-stat dp-stat--amber"><span>Pending</span><strong>{paymentsLoading ? "…" : summary.pending}</strong></div>
+          <div className="dp-stat dp-stat--gold">
+            <div className="dp-stat-head">
+              <div className="dp-stat-ico">◈</div>
+            </div>
+            <span className="dp-stat-label">Total payments</span>
+            <strong>{paymentsLoading ? "…" : summary.total}</strong>
+          </div>
+          <div className="dp-stat dp-stat--green">
+            <div className="dp-stat-head">
+              <div className="dp-stat-ico">✓</div>
+            </div>
+            <span className="dp-stat-label">Successful</span>
+            <strong>{paymentsLoading ? "…" : summary.success}</strong>
+          </div>
+          <div className="dp-stat dp-stat--red">
+            <div className="dp-stat-head">
+              <div className="dp-stat-ico">×</div>
+            </div>
+            <span className="dp-stat-label">Failed</span>
+            <strong>{paymentsLoading ? "…" : summary.failed}</strong>
+          </div>
+          <div className="dp-stat dp-stat--amber">
+            <div className="dp-stat-head">
+              <div className="dp-stat-ico">⌛</div>
+            </div>
+            <span className="dp-stat-label">Pending</span>
+            <strong>{paymentsLoading ? "…" : summary.pending}</strong>
+          </div>
         </section>
 
         <section className="dp-panel">
@@ -144,7 +239,7 @@ export default function DashboardPage() {
               </span>
             </div>
             <button className="dp-btn" type="button" onClick={loadPayments} disabled={paymentsLoading}>
-              {paymentsLoading ? "Refreshing..." : "Refresh"}
+              {paymentsLoading ? "Refreshing…" : "↻ Refresh"}
             </button>
           </div>
 
@@ -191,12 +286,29 @@ export default function DashboardPage() {
           <div className="dp-panel-head">
             <div>
               <h2>Manage your exam bookings</h2>
-              <span className="dp-sub">Book, review, reschedule or cancel from the bookings area.</span>
+              <span className="dp-sub">Book, review, reschedule or cancel from these quick actions.</span>
             </div>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <Link className="dp-btn" to="/exam/booking">New booking</Link>
-              <Link className="dp-btn" to="/exam/reservations">View bookings</Link>
-            </div>
+          </div>
+
+          <div className="dp-quick">
+            <Link to="/exam/booking" className="dp-quick-card">
+              <div className="dp-quick-ico">+</div>
+              <h3>New booking</h3>
+              <p>Search occupations, pick a centre and reserve a seat in a few taps.</p>
+              <em>Book now →</em>
+            </Link>
+            <Link to="/exam/reservations" className="dp-quick-card">
+              <div className="dp-quick-ico">☰</div>
+              <h3>My bookings</h3>
+              <p>Review upcoming exams, download tickets and reschedule when needed.</p>
+              <em>View bookings →</em>
+            </Link>
+            <Link to="/exam/booking" className="dp-quick-card">
+              <div className="dp-quick-ico">↻</div>
+              <h3>Retry payment</h3>
+              <p>Failed or pending payment? Reopen the booking to complete it in seconds.</p>
+              <em>Complete payment →</em>
+            </Link>
           </div>
         </section>
       </main>

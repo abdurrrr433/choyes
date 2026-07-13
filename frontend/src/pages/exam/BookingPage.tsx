@@ -10,6 +10,7 @@ import {
   buildCenterOptions, buildCityOptions, buildDateOptions, buildCalendarDays,
   formatDateLabel, detectBookingMode, resolveSessionCenter, SectionCenterRule,
 } from "@/lib/booking-utils";
+import "@/styles/booking-premium.css";
 
 const FALLBACK_TEST_CENTERS: { siteId: string; name: string; city: string }[] = [
   { siteId: "17", name: "Bangladesh Korea TTC Dhaka", city: "Dhaka" },
@@ -1201,229 +1202,285 @@ export default function BookingPage() {
     setAvailableDate(nextDate); setCalendarMonth(nextDate.slice(0, 7)); setIsDatePickerOpen(false);
   }
 
+  const isReschedule = searchParams.get("reschedule") === "1";
+  const stepOccupationDone = Boolean(selectedOccupationId);
+  const stepCityDateDone = stepOccupationDone && Boolean(selectedCity && availableDate);
+  const stepCenterSessionDone = stepCityDateDone && Boolean(selectedCenterId && sessionId);
+  const stepReady = stepCenterSessionDone && Boolean(languageCode);
+
+  function stepClass(done: boolean, active: boolean) {
+    return `bk-step${done ? " bk-step--done" : ""}${active ? " bk-step--active" : ""}`;
+  }
+
   return (
-    <div className="booking-shell">
-      <div className="booking-modal">
-        <div className="modal-head">
-          <h1>Create New Booking</h1>
-          <Link to="/dashboard" className="close-link" aria-label="Close">x</Link>
-        </div>
-        <div className="modal-meta-links">
-          <Link to="/exam/reservations">My bookings</Link>
-          <Link to="/dashboard">Dashboard</Link>
-        </div>
+    <div className="bk-shell">
+      <div className="bk-container">
+        {/* Hero */}
+        <section className="bk-hero">
+          <div className="bk-hero-row">
+            <div>
+              <span className="bk-hero-eyebrow">{isReschedule ? "Reschedule reservation" : "New booking"}</span>
+              <h1>{isReschedule ? "Reschedule your exam" : "Create a new"} <em>booking</em></h1>
+              <p>Choose your occupation, city, date and test centre. Every step syncs live with the SVP platform to keep seats accurate.</p>
+            </div>
+            <div className="bk-hero-links">
+              <Link to="/exam/reservations" className="bk-hero-link">☰ My bookings</Link>
+              <Link to="/dashboard" className="bk-hero-link">◈ Dashboard</Link>
+              <Link to="/dashboard" className="bk-hero-link bk-hero-link--close" aria-label="Close">×</Link>
+            </div>
+          </div>
+        </section>
 
-        {status ? <div className="notice notice--ok">{status}</div> : null}
-        {error ? <div className="notice notice--error">{error}</div> : null}
+        {/* Progress steps */}
+        <section className="bk-steps" aria-label="Booking progress">
+          <div className={stepClass(stepOccupationDone, !stepOccupationDone)}>
+            <div className="bk-step-num">1</div>
+            <div className="bk-step-copy"><small>Step 1</small><span>Occupation</span></div>
+          </div>
+          <div className={stepClass(stepCityDateDone, stepOccupationDone && !stepCityDateDone)}>
+            <div className="bk-step-num">2</div>
+            <div className="bk-step-copy"><small>Step 2</small><span>City &amp; date</span></div>
+          </div>
+          <div className={stepClass(stepCenterSessionDone, stepCityDateDone && !stepCenterSessionDone)}>
+            <div className="bk-step-num">3</div>
+            <div className="bk-step-copy"><small>Step 3</small><span>Centre &amp; session</span></div>
+          </div>
+          <div className={stepClass(stepReady, stepCenterSessionDone && !stepReady)}>
+            <div className="bk-step-num">4</div>
+            <div className="bk-step-copy"><small>Step 4</small><span>Confirm &amp; pay</span></div>
+          </div>
+        </section>
 
-        <div className="form-grid">
-          <div className="field-block">
-            <span>Category ID</span>
-            <div className="readonly-value">{categoryId || "—"}</div>
+        {status ? <div className="bk-notice bk-notice--ok">{status}</div> : null}
+        {error ? <div className="bk-notice bk-notice--error">{error}</div> : null}
+
+        {/* Booking form */}
+        <section className="bk-panel">
+          <div className="bk-panel-head">
+            <div>
+              <h2>Booking details</h2>
+              <p>Fields marked with <b style={{ color: "var(--bk-gold)" }}>*</b> are required.</p>
+            </div>
           </div>
-          <div className="field-block">
-            <span>Methodology</span>
-            <div className="readonly-value">{methodology}</div>
-          </div>
-          <div className="field-block field-block--occupation" ref={occupationRef}>
-            <span>Occupation *</span>
-            <button type="button" className="date-trigger" onClick={() => setIsOccupationOpen((p) => !p)}>
-              <span className={selectedOccupation ? "" : "placeholder-text"}>
-                {selectedOccupation ? selectedOccupation.name : (loadingOccupations ? "Loading..." : "Select occupation")}
-              </span>
-              <span className="date-trigger__icon">▾</span>
-            </button>
-            {isOccupationOpen && (
-              <div className="occupation-dropdown">
-                <input
-                  type="text"
-                  className="occupation-search"
-                  placeholder="Search occupation..."
-                  value={occupationSearch}
-                  onChange={(e) => setOccupationSearch(e.target.value)}
-                  autoFocus
-                />
-                <div className="occupation-list">
-                  {filteredOccupations.length === 0 && (
-                    <div className="occupation-empty">No results found</div>
-                  )}
-                  {filteredOccupations.map((item) => (
-                    <button key={item.id} type="button"
-                      className={`occupation-item${String(item.id) === String(selectedOccupationId) ? " occupation-item--active" : ""}`}
-                      onClick={() => { setSelectedOccupationId(String(item.id)); setIsOccupationOpen(false); setOccupationSearch(""); }}>
-                      {item.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="field-block">
-            <span>City *</span>
-            <select value={selectedCity} onChange={(e) => setSelectedCity(e.target.value)} disabled={!selectedOccupationId}>
-              <option value="">Select city</option>
-              {cityOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </div>
-          <div className="field-block field-block--datepicker">
-            <span>Available Date *</span>
-            <button type="button" className="date-trigger" onClick={() => setIsDatePickerOpen((prev) => !prev)}
-              disabled={loadingDates || !availableDates.length || !selectedCity}>
-              <span>{availableDate ? formatDateLabel(availableDate) : "Select available date..."}</span>
-              <span className="date-trigger__icon">[]</span>
-            </button>
-            {isDatePickerOpen && selectedCity && availableDates.length ? (
-              <div className="date-popup">
-                <div className="date-popup__head">
-                  <strong>Select Date</strong>
-                  <button type="button" className="icon-btn" onClick={() => setIsDatePickerOpen(false)}>x</button>
-                </div>
-                <div className="date-popup__toolbar">
-                  <button type="button" className="icon-btn" onClick={() => shiftCalendarMonth(-1)}>{"<"}</button>
-                  <select className="toolbar-select" value={calendarCursorDate.getMonth()}
-                    onChange={(e) => { const next = new Date(calendarCursorDate); next.setMonth(Number(e.target.value)); setCalendarMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`); }}>
-                    {Array.from({ length: 12 }, (_, index) => <option key={index} value={index}>{new Date(2000, index, 1).toLocaleDateString("en-US", { month: "long" })}</option>)}
-                  </select>
-                  <select className="toolbar-select" value={calendarYear}
-                    onChange={(e) => { const next = new Date(calendarCursorDate); next.setFullYear(Number(e.target.value)); setCalendarMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`); }}>
-                    {calendarYearOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                  <button type="button" className="icon-btn" onClick={() => shiftCalendarMonth(1)}>{">"}</button>
-                </div>
-                <div className="calendar-weekdays">
-                  <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
-                </div>
-                <div className="calendar-grid">
-                  {calendarDays.map((item) =>
-                    item.empty ? <div key={item.key} className="calendar-cell calendar-cell--empty" /> : (
-                      <button key={item.key} type="button"
-                        className={`calendar-cell${item.available ? " calendar-cell--available" : ""}${item.iso === availableDate ? " calendar-cell--active" : ""}`}
-                        onClick={() => item.available && pickDateFromCalendar(item.iso!)} disabled={!item.available}>
-                        <span>{item.day}</span>
+
+          <div className="bk-form-grid">
+            <div className="bk-field">
+              <span className="bk-field-label">Category ID</span>
+              <div className="bk-readonly">{categoryId || "—"}</div>
+            </div>
+            <div className="bk-field">
+              <span className="bk-field-label">Methodology</span>
+              <div className="bk-readonly">{methodology}</div>
+            </div>
+
+            <div className="bk-field bk-field--wide" ref={occupationRef}>
+              <span className="bk-field-label">Occupation <b>*</b></span>
+              <button type="button" className="bk-input bk-trigger" onClick={() => setIsOccupationOpen((p) => !p)}>
+                <span className={selectedOccupation ? "" : "bk-placeholder"}>
+                  {selectedOccupation ? selectedOccupation.name : (loadingOccupations ? "Loading occupations…" : "Select occupation")}
+                </span>
+                <span className="bk-trigger-icon">▾</span>
+              </button>
+              {isOccupationOpen && (
+                <div className="bk-popup">
+                  <input
+                    type="text"
+                    className="bk-popup-search"
+                    placeholder="Search occupation…"
+                    value={occupationSearch}
+                    onChange={(e) => setOccupationSearch(e.target.value)}
+                    autoFocus
+                  />
+                  <div className="bk-popup-list">
+                    {filteredOccupations.length === 0 && (
+                      <div className="bk-popup-empty">No results found</div>
+                    )}
+                    {filteredOccupations.map((item) => (
+                      <button key={item.id} type="button"
+                        className={`bk-popup-item${String(item.id) === String(selectedOccupationId) ? " bk-popup-item--active" : ""}`}
+                        onClick={() => { setSelectedOccupationId(String(item.id)); setIsOccupationOpen(false); setOccupationSearch(""); }}>
+                        {item.name}
                       </button>
-                    )
-                  )}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ) : null}
-          </div>
-          {!loadingDates && selectedCity && !availableDates.length ? (
-            <small className="error-text">No available dates found yet. Try another city or occupation.</small>
-          ) : null}
-          <div className="field-block">
-            <span>Test Center *</span>
-            <select value={selectedCenterId} onChange={(e) => setSelectedCenterId(e.target.value)} disabled={!centerOptions.length}>
-              <option value="">{loadingSessions ? "Loading centers..." : "Select test center"}</option>
-              {centerOptions.map((item) => <option key={item.siteId} value={item.siteId}>{item.name} (Site #{item.siteId})</option>)}
-            </select>
-          </div>
-          <div className="field-block">
-            <span>Exam Session *</span>
-            <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} disabled={!filteredSessions.length}>
-              <option value="">{loadingSessions ? "Loading sessions..." : "Select session"}</option>
-              {filteredSessions.map((item) => {
-                const sid = getSessionSiteId(item);
-                const realName = getResolvedSessionCenterName(item);
-                const seats = item?.available_seats ?? item?.seats_available ?? item?.remaining_seats ?? null;
-                const dateTimeLabel = formatSessionDateTime(item);
-                return (
-                  <option key={getSessionId(item)} value={getSessionId(item)}>
-                    {realName}{sid ? ` (Site #${sid})` : ""}{dateTimeLabel ? ` | ${dateTimeLabel}` : ""}{seats !== null && seats !== undefined ? ` | Seats: ${seats}` : ""}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <div className="field-block">
-            <span>Language *</span>
-            <select value={languageCode} onChange={(e) => setLanguageCode(e.target.value)}>
-              <option value="">Select language</option>
-              {selectedOccupation?.languageCodes.map((item: any, idx: number) => (
-                <option key={`${item.code}-${idx}`} value={item.code}>{item.englishName} {item.code ? `(${item.code})` : ""}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+              )}
+            </div>
 
-        <div className="meta-grid">
-          <div><span>Booking Type:</span> <strong>{loadingBalance ? "Checking..." : bookingMode.label}</strong></div>
-          <div><span>Reservation Credits:</span> <strong>{loadingBalance ? "-" : bookingMode.reservationCredits}</strong></div>
-          <div><span>Free Certificates:</span> <strong>{loadingBalance ? "-" : bookingMode.freeCertificates}</strong></div>
-          <div><span>Available Seats:</span> <strong>{loadingSeats ? "Loading..." : (liveAvailableSeats !== null ? liveAvailableSeats : (selectedSession ? (selectedSession.available_seats ?? selectedSession.seats_available ?? "-") : "-"))}</strong></div>
-          <div><span>City:</span> <strong>{siteCity || selectedCity || "-"}</strong></div>
-          <div><span>Site ID:</span> <strong>{siteId || "-"}</strong></div>
-          <div><span>Test Center ID:</span> <strong>{
-            extractTestCenterId(selectedSession) || extractTestCenterId(sessionDetail) || siteId || "-"
-          }</strong></div>
-          <div><span>Test Center:</span> <strong>{selectedSession ? getResolvedSessionCenterName(selectedSession) : (selectedCenterOption?.name || "-")}</strong></div>
-          <div><span>Session Status:</span> <strong>{loadingSeats ? "Loading..." : (sessionDetail?.status || "-")}</strong></div>
-          <div><span>Hold ID:</span> <strong>{holdId || "-"}</strong></div>
-          <div><span>Booking No:</span> <strong>{reservationId || "-"}</strong></div>
-        </div>
+            <div className="bk-field">
+              <span className="bk-field-label">City <b>*</b></span>
+              <select value={selectedCity} onChange={(e) => setSelectedCity(e.target.value)} disabled={!selectedOccupationId}>
+                <option value="">Select city</option>
+                {cityOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </div>
 
-        <div className="actions-row">
-          <button className="ghost-btn" type="button" onClick={createHold} disabled={creatingHold || !sessionId}>
-            {creatingHold ? "Creating hold..." : "Create Hold"}
+            <div className="bk-field">
+              <span className="bk-field-label">Available date <b>*</b></span>
+              <button type="button" className="bk-input bk-trigger" onClick={() => setIsDatePickerOpen((prev) => !prev)}
+                disabled={loadingDates || !availableDates.length || !selectedCity}>
+                <span className={availableDate ? "" : "bk-placeholder"}>
+                  {availableDate ? formatDateLabel(availableDate) : (selectedCity ? "Select available date…" : "Select city first")}
+                </span>
+                <span className="bk-trigger-icon">📅</span>
+              </button>
+              {isDatePickerOpen && selectedCity && availableDates.length ? (
+                <div className="bk-popup bk-date-popup">
+                  <div className="bk-date-head">
+                    <strong>Select date</strong>
+                    <button type="button" className="bk-icon-btn" onClick={() => setIsDatePickerOpen(false)}>×</button>
+                  </div>
+                  <div className="bk-date-tools">
+                    <button type="button" className="bk-icon-btn" onClick={() => shiftCalendarMonth(-1)}>{"<"}</button>
+                    <select className="bk-tool-select" value={calendarCursorDate.getMonth()}
+                      onChange={(e) => { const next = new Date(calendarCursorDate); next.setMonth(Number(e.target.value)); setCalendarMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`); }}>
+                      {Array.from({ length: 12 }, (_, index) => <option key={index} value={index}>{new Date(2000, index, 1).toLocaleDateString("en-US", { month: "long" })}</option>)}
+                    </select>
+                    <select className="bk-tool-select" value={calendarYear}
+                      onChange={(e) => { const next = new Date(calendarCursorDate); next.setFullYear(Number(e.target.value)); setCalendarMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`); }}>
+                      {calendarYearOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                    <button type="button" className="bk-icon-btn" onClick={() => shiftCalendarMonth(1)}>{">"}</button>
+                  </div>
+                  <div className="bk-weekdays">
+                    <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                  </div>
+                  <div className="bk-calendar">
+                    {calendarDays.map((item) =>
+                      item.empty ? <div key={item.key} className="bk-cell bk-cell--empty" /> : (
+                        <button key={item.key} type="button"
+                          className={`bk-cell${item.available ? " bk-cell--available" : ""}${item.iso === availableDate ? " bk-cell--active" : ""}`}
+                          onClick={() => item.available && pickDateFromCalendar(item.iso!)} disabled={!item.available}>
+                          {item.day}
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              {!loadingDates && selectedCity && !availableDates.length ? (
+                <small className="bk-error-text">No available dates found yet. Try another city or occupation.</small>
+              ) : null}
+            </div>
+
+            <div className="bk-field">
+              <span className="bk-field-label">Test centre <b>*</b></span>
+              <select value={selectedCenterId} onChange={(e) => setSelectedCenterId(e.target.value)} disabled={!centerOptions.length}>
+                <option value="">{loadingSessions ? "Loading centres…" : "Select test centre"}</option>
+                {centerOptions.map((item) => <option key={item.siteId} value={item.siteId}>{item.name} (Site #{item.siteId})</option>)}
+              </select>
+            </div>
+
+            <div className="bk-field">
+              <span className="bk-field-label">Exam session <b>*</b></span>
+              <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} disabled={!filteredSessions.length}>
+                <option value="">{loadingSessions ? "Loading sessions…" : "Select session"}</option>
+                {filteredSessions.map((item) => {
+                  const sid = getSessionSiteId(item);
+                  const realName = getResolvedSessionCenterName(item);
+                  const seats = item?.available_seats ?? item?.seats_available ?? item?.remaining_seats ?? null;
+                  const dateTimeLabel = formatSessionDateTime(item);
+                  return (
+                    <option key={getSessionId(item)} value={getSessionId(item)}>
+                      {realName}{sid ? ` (Site #${sid})` : ""}{dateTimeLabel ? ` | ${dateTimeLabel}` : ""}{seats !== null && seats !== undefined ? ` | Seats: ${seats}` : ""}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="bk-field">
+              <span className="bk-field-label">Language <b>*</b></span>
+              <select value={languageCode} onChange={(e) => setLanguageCode(e.target.value)}>
+                <option value="">Select language</option>
+                {selectedOccupation?.languageCodes.map((item: any, idx: number) => (
+                  <option key={`${item.code}-${idx}`} value={item.code}>{item.englishName} {item.code ? `(${item.code})` : ""}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </section>
+
+        {/* Booking summary */}
+        <section className="bk-panel">
+          <div className="bk-panel-head">
+            <div>
+              <h2>Booking summary</h2>
+              <p>Live data from SVP — updates as you change your selections.</p>
+            </div>
+          </div>
+
+          <div className="bk-meta">
+            <div className="bk-meta-row"><span>Booking type</span><strong className="bk-highlight">{loadingBalance ? "Checking…" : bookingMode.label}</strong></div>
+            <div className="bk-meta-row"><span>Reservation credits</span><strong>{loadingBalance ? "-" : bookingMode.reservationCredits}</strong></div>
+            <div className="bk-meta-row"><span>Free certificates</span><strong>{loadingBalance ? "-" : bookingMode.freeCertificates}</strong></div>
+            <div className="bk-meta-row"><span>Available seats</span><strong>{loadingSeats ? "Loading…" : (liveAvailableSeats !== null ? liveAvailableSeats : (selectedSession ? (selectedSession.available_seats ?? selectedSession.seats_available ?? "-") : "-"))}</strong></div>
+            <div className="bk-meta-row"><span>City</span><strong>{siteCity || selectedCity || "-"}</strong></div>
+            <div className="bk-meta-row"><span>Site ID</span><strong>{siteId || "-"}</strong></div>
+            <div className="bk-meta-row"><span>Test centre ID</span><strong>{
+              extractTestCenterId(selectedSession) || extractTestCenterId(sessionDetail) || siteId || "-"
+            }</strong></div>
+            <div className="bk-meta-row"><span>Test centre</span><strong>{selectedSession ? getResolvedSessionCenterName(selectedSession) : (selectedCenterOption?.name || "-")}</strong></div>
+            <div className="bk-meta-row"><span>Session status</span><strong>{loadingSeats ? "Loading…" : (sessionDetail?.status || "-")}</strong></div>
+            <div className="bk-meta-row"><span>Hold ID</span><strong>{holdId || "-"}</strong></div>
+            <div className="bk-meta-row"><span>Booking no.</span><strong className="bk-highlight">{reservationId || "-"}</strong></div>
+          </div>
+        </section>
+
+        {/* Actions */}
+        <section className="bk-actions">
+          <button className="bk-btn bk-btn--ghost" type="button" onClick={createHold} disabled={creatingHold || !sessionId}>
+            {creatingHold ? "Creating hold…" : "Create hold"}
           </button>
           {paymentSession ? (
-            <button className="primary-btn" type="button" onClick={() => openPaymentSession(paymentSession)}>
-              Pay Now
+            <button className="bk-btn bk-btn--primary" type="button" onClick={() => openPaymentSession(paymentSession)}>
+              Pay now →
             </button>
           ) : null}
-          {searchParams.get("reschedule") === "1" ? (
-            <button className="primary-btn" type="button" onClick={() => setShowRescheduleConfirm(true)} disabled={booking || !sessionId}>
-              {booking ? "Confirming..." : "Confirm Reschedule"}
+          {isReschedule ? (
+            <button className="bk-btn bk-btn--primary" type="button" onClick={() => setShowRescheduleConfirm(true)} disabled={booking || !sessionId}>
+              {booking ? "Confirming…" : "Confirm reschedule →"}
             </button>
           ) : (
-            <button className="primary-btn" type="button" onClick={bookReservation} disabled={booking || !sessionId}>
-              {booking ? "Confirming..." : "Confirm Booking"}
+            <button className="bk-btn bk-btn--primary" type="button" onClick={bookReservation} disabled={booking || !sessionId}>
+              {booking ? "Confirming…" : "Confirm booking →"}
             </button>
           )}
-        </div>
+        </section>
 
-        {/* Reschedule Confirmation Dialog */}
+        {/* Reschedule Confirmation Dialog — premium redesign */}
         {showRescheduleConfirm && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
-            <div style={{ background: "#fff", borderRadius: "12px", padding: "28px 32px", maxWidth: "520px", width: "90%", boxShadow: "0 10px 40px rgba(0,0,0,0.2)" }}>
-              <h2 style={{ margin: "0 0 18px", fontSize: "18px", fontWeight: 700 }}>Confirm Reschedule</h2>
-              <p style={{ margin: "0 0 16px", color: "#666", fontSize: "14px" }}>
-                This will <strong style={{ color: "#2563eb" }}>reschedule</strong> your existing reservation to a new session.
-              </p>
+          <div className="bk-modal-overlay" role="dialog" aria-modal="true">
+            <div className="bk-modal">
+              <h2>Confirm reschedule</h2>
+              <p>This will <b>reschedule</b> your existing reservation to a new session. The old reservation will be released.</p>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-                {/* Old reservation */}
-                <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "14px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#dc3545", marginBottom: "8px", textTransform: "uppercase" }}>Old Reservation</div>
-                  <div style={{ fontSize: "13px", lineHeight: "1.6" }}>
-                    <div><span style={{ color: "#888" }}>ID:</span> <strong>#{searchParams.get("reservationId") || "-"}</strong></div>
-                    <div><span style={{ color: "#888" }}>Date:</span> <strong>{searchParams.get("examDate") || "-"}</strong></div>
-                    <div><span style={{ color: "#888" }}>Site:</span> <strong>#{searchParams.get("siteId") || "-"}</strong></div>
-                    <div><span style={{ color: "#888" }}>City:</span> <strong>{searchParams.get("siteCity") || "-"}</strong></div>
-                  </div>
+              <div className="bk-compare">
+                <div className="bk-compare-col bk-compare-col--old">
+                  <div className="bk-compare-title">Old reservation</div>
+                  <div className="bk-compare-line"><span>ID</span><strong>#{searchParams.get("reservationId") || "-"}</strong></div>
+                  <div className="bk-compare-line"><span>Date</span><strong>{searchParams.get("examDate") || "-"}</strong></div>
+                  <div className="bk-compare-line"><span>Site</span><strong>#{searchParams.get("siteId") || "-"}</strong></div>
+                  <div className="bk-compare-line"><span>City</span><strong>{searchParams.get("siteCity") || "-"}</strong></div>
                 </div>
 
-                {/* New reservation */}
-                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "14px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#16a34a", marginBottom: "8px", textTransform: "uppercase" }}>New Reservation</div>
-                  <div style={{ fontSize: "13px", lineHeight: "1.6" }}>
-                    <div><span style={{ color: "#888" }}>Session:</span> <strong>#{sessionId || "-"}</strong></div>
-                    <div><span style={{ color: "#888" }}>Date:</span> <strong>{availableDate || "-"}</strong></div>
-                    <div><span style={{ color: "#888" }}>Site:</span> <strong>#{selectedSession ? (getSessionSiteId(selectedSession) || siteId || "-") : (siteId || "-")}</strong></div>
-                    <div><span style={{ color: "#888" }}>City:</span> <strong>{selectedSession ? (getSessionSiteCity(selectedSession) || siteCity || selectedCity || "-") : (siteCity || selectedCity || "-")}</strong></div>
-                    <div><span style={{ color: "#888" }}>Center:</span> <strong>{selectedSession ? getResolvedSessionCenterName(selectedSession) : (centerOptions.find(c => String(c.siteId) === String(selectedCenterId))?.name || "-")}</strong></div>
-                  </div>
+                <div className="bk-compare-col bk-compare-col--new">
+                  <div className="bk-compare-title">New reservation</div>
+                  <div className="bk-compare-line"><span>Session</span><strong>#{sessionId || "-"}</strong></div>
+                  <div className="bk-compare-line"><span>Date</span><strong>{availableDate || "-"}</strong></div>
+                  <div className="bk-compare-line"><span>Site</span><strong>#{selectedSession ? (getSessionSiteId(selectedSession) || siteId || "-") : (siteId || "-")}</strong></div>
+                  <div className="bk-compare-line"><span>City</span><strong>{selectedSession ? (getSessionSiteCity(selectedSession) || siteCity || selectedCity || "-") : (siteCity || selectedCity || "-")}</strong></div>
+                  <div className="bk-compare-line"><span>Centre</span><strong>{selectedSession ? getResolvedSessionCenterName(selectedSession) : (centerOptions.find(c => String(c.siteId) === String(selectedCenterId))?.name || "-")}</strong></div>
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-                <button type="button" onClick={() => setShowRescheduleConfirm(false)}
-                  style={{ padding: "10px 20px", borderRadius: "6px", border: "1px solid #ddd", background: "#f5f5f5", cursor: "pointer", fontWeight: 500 }}>
+              <div className="bk-modal-actions">
+                <button type="button" className="bk-btn bk-btn--ghost" onClick={() => setShowRescheduleConfirm(false)}>
                   Cancel
                 </button>
-                <button type="button" disabled={booking}
-                  onClick={() => { setShowRescheduleConfirm(false); bookReservation(); }}
-                  style={{ padding: "10px 20px", borderRadius: "6px", border: "none", background: "#2563eb", color: "#fff", cursor: "pointer", fontWeight: 600 }}>
-                  {booking ? "Processing..." : "Yes, Reschedule"}
+                <button type="button" className="bk-btn bk-btn--primary" disabled={booking}
+                  onClick={() => { setShowRescheduleConfirm(false); bookReservation(); }}>
+                  {booking ? "Processing…" : "Yes, reschedule"}
                 </button>
               </div>
             </div>
