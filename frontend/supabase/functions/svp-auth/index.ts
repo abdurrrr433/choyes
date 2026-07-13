@@ -215,7 +215,13 @@ Deno.serve(async (req) => {
   }
 
   const url = new URL(req.url);
-  const path = url.pathname.replace(/^\/svp-auth/, "");
+  // Hosted and local gateways can expose the function as either
+  // /svp-auth/* or /functions/v1/svp-auth/*. Normalize both shapes.
+  const marker = "/svp-auth";
+  const markerIndex = url.pathname.indexOf(marker);
+  const path = markerIndex >= 0
+    ? url.pathname.slice(markerIndex + marker.length) || "/"
+    : url.pathname;
 
   try {
     // Public registration reference data. No captured/user bearer token is used.

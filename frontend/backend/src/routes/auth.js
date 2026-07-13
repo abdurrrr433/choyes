@@ -5,9 +5,26 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { encryptString, randomToken } from '../lib/crypto.js';
 import { signAccess } from '../lib/jwt.js';
-import { svpRequest } from '../lib/svpClient.js';
+import { svpMultipartRequest, svpRequest } from '../lib/svpClient.js';
 
 const router = Router();
+
+const MAX_REGISTRATION_BYTES = 20 * 1024 * 1024;
+
+async function readRequestBody(req, maxBytes = MAX_REGISTRATION_BYTES) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > maxBytes) {
+      const err = new Error('Registration upload is too large (maximum 20 MB)');
+      err.statusCode = 413;
+      throw err;
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
 
 function pickFirst(...values) {
   for (const value of values) {
@@ -126,6 +143,41 @@ function normalizeTokenLoginBody(payload) {
     token: input.token,
   };
 }
+
+router.get('/registration/countries', async (_req, res, next) => {
+  try {
+    res.json(await svpRequest('/api/v1/visitor_space/countries?per_page=250'));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/registration/countries/:countryId', async (req, res, next) => {
+  try {
+    const countryId = encodeURIComponent(String(req.params.countryId));
+    res.json(await svpRequest(`/api/v1/visitor_space/countries/${countryId}`));
+  } catch (e) {
+    next(e);
+  }
+});
+
+async function forwardRegistration(req, res, next, target) {
+  try {
+    const contentType = req.headers['content-type'];
+    const body = await readRequestBody(req);
+    res.json(await svpMultipartRequest(target, { contentType, body }));
+  } catch (e) {
+    next(e);
+  }
+}
+
+router.post('/registration/validate', (req, res, next) =>
+  forwardRegistration(req, res, next, '/api/v1/individual_labor_space/registrations/validate')
+);
+
+router.post('/registration', (req, res, next) =>
+  forwardRegistration(req, res, next, '/api/v1/individual_labor_space/registrations')
+);
 
 async function createSessionForUser({ login, svpToken, svpExp }) {
   const user = await prisma.user.upsert({

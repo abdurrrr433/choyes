@@ -20,13 +20,18 @@ type FunctionKind = "proxy" | "testCenter";
 
 function resolveBackend() {
   if (SUPABASE_URL) {
+    const useRailwayAuth = Boolean(import.meta.env.VITE_BACKEND_URL);
     return {
+      authUsesCookies: useRailwayAuth,
+      authBase: useRailwayAuth ? RAILWAY_URL : `${SUPABASE_URL}/functions/v1`,
       base: `${SUPABASE_URL}/functions/v1`,
-      authPrefix: "/svp-auth",
+      authPrefix: useRailwayAuth ? "/api/auth" : "/svp-auth",
       proxyPrefix: (kind: FunctionKind) => (kind === "proxy" ? "/svp-proxy" : "/test-center-owner"),
     };
   }
   return {
+    authUsesCookies: true,
+    authBase: RAILWAY_URL,
     base: RAILWAY_URL,
     authPrefix: "/api/auth",
     // test-center-owner is a Supabase-only feature (see
@@ -35,7 +40,13 @@ function resolveBackend() {
   };
 }
 
-const { base: BASE, authPrefix: AUTH_PREFIX, proxyPrefix: PROXY_PREFIX } = resolveBackend();
+const {
+  authUsesCookies: AUTH_USES_COOKIES,
+  authBase: AUTH_BASE,
+  base: BASE,
+  authPrefix: AUTH_PREFIX,
+  proxyPrefix: PROXY_PREFIX,
+} = resolveBackend();
 
 function getSession() {
   const accessToken = localStorage.getItem("accessToken");
@@ -72,8 +83,9 @@ export async function apiAuth<T = any>(
   action: string,
   body: any
 ): Promise<T> {
-  const { res, data } = await doFetch(`${BASE}${AUTH_PREFIX}${action}`, {
+  const { res, data } = await doFetch(`${AUTH_BASE}${AUTH_PREFIX}${action}`, {
     method: "POST",
+    credentials: AUTH_USES_COOKIES ? "include" : "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -87,8 +99,9 @@ export async function apiAuth<T = any>(
 }
 
 export async function apiAuthGet<T = any>(action: string): Promise<T> {
-  const { res, data } = await doFetch(`${BASE}${AUTH_PREFIX}${action}`, {
+  const { res, data } = await doFetch(`${AUTH_BASE}${AUTH_PREFIX}${action}`, {
     method: "GET",
+    credentials: AUTH_USES_COOKIES ? "include" : "same-origin",
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw Object.assign(new Error(data?.message || data?.error || "Request failed"), { status: res.status, data });
@@ -96,7 +109,11 @@ export async function apiAuthGet<T = any>(action: string): Promise<T> {
 }
 
 export async function apiAuthForm<T = any>(action: string, form: FormData): Promise<T> {
-  const res = await fetch(`${BASE}${AUTH_PREFIX}${action}`, { method: "POST", body: form });
+  const res = await fetch(`${AUTH_BASE}${AUTH_PREFIX}${action}`, {
+    method: "POST",
+    credentials: AUTH_USES_COOKIES ? "include" : "same-origin",
+    body: form,
+  });
   const text = await res.text();
   let data: any;
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
@@ -136,10 +153,12 @@ async function callFunction<T = any>(
 
   let { res, data } = await doFetch(`${BASE}${prefix}${path}`, makeOpts(access));
 
-  if (shouldRefresh(res.status, data) && session.refreshToken && session.sessionId) {
+  const canRefresh = AUTH_USES_COOKIES || Boolean(session.refreshToken && session.sessionId);
+  if (shouldRefresh(res.status, data) && canRefresh) {
     try {
-      const refreshRes = await doFetch(`${BASE}${AUTH_PREFIX}/refresh`, {
+      const refreshRes = await doFetch(`${AUTH_BASE}${AUTH_PREFIX}/refresh`, {
         method: "POST",
+        credentials: AUTH_USES_COOKIES ? "include" : "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: session.sessionId, refreshToken: session.refreshToken }),
       });

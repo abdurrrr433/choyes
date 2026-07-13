@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { apiAuth } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { getPendingAuth, setPendingAuth } from "@/lib/pending-auth";
 
 export default function LoginPage() {
   const [login, setLogin] = useState("");
@@ -24,10 +25,11 @@ export default function LoginPage() {
   }
 
   useEffect(() => {
+    const pending = getPendingAuth();
     const portalLogin = sessionStorage.getItem("portal_login") || "";
-    const portalPassword = sessionStorage.getItem("portal_password") || "";
-    setLogin(portalLogin);
-    setPassword(portalPassword);
+    setLogin(pending?.login || portalLogin);
+    setPassword(pending?.password || "");
+    if (pending?.otpMethod) setOtpMethod(pending.otpMethod);
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -36,9 +38,7 @@ export default function LoginPage() {
     setMsg("Sending OTP...");
     try {
       await apiAuth("/login", { login, password, otp_method: otpMethod });
-      sessionStorage.setItem("tmp_login", login);
-      sessionStorage.setItem("tmp_password", password);
-      sessionStorage.setItem("tmp_otpMethod", otpMethod);
+      setPendingAuth({ login, password, otpMethod });
       setMsg("OTP sent. Check your email or SMS.");
       navigate("/auth/otp");
     } catch (err: any) {

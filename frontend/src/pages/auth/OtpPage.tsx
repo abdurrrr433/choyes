@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiAuth } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { clearPendingAuth, getPendingAuth, setPendingAuth } from "@/lib/pending-auth";
 
 export default function OtpPage() {
   const navigate = useNavigate();
@@ -16,15 +17,12 @@ export default function OtpPage() {
   const [resending, setResending] = useState(false);
 
   useEffect(() => {
+    const pending = getPendingAuth();
     const queryLogin = searchParams.get("login");
-    const queryPassword = searchParams.get("password");
     const queryOtpMethod = searchParams.get("otpMethod");
-    const storedLogin = sessionStorage.getItem("tmp_login") || "";
-    const storedPassword = sessionStorage.getItem("tmp_password") || "";
-    const storedOtpMethod = sessionStorage.getItem("tmp_otpMethod") || "email";
-    setLogin(queryLogin || storedLogin);
-    setPassword(queryPassword || storedPassword);
-    setOtpMethod(queryOtpMethod || storedOtpMethod);
+    setLogin(queryLogin || pending?.login || "");
+    setPassword(pending?.password || "");
+    setOtpMethod(queryOtpMethod || pending?.otpMethod || "email");
   }, [searchParams]);
 
   function getErrorMessage(err: any) {
@@ -42,9 +40,7 @@ export default function OtpPage() {
     try {
       const res = await apiAuth("/otp-verify", { login, password, otp_attempt: otpAttempt, otp_method: otpMethod });
       authLogin(res.accessToken, res.user || res);
-      sessionStorage.removeItem("tmp_login");
-      sessionStorage.removeItem("tmp_password");
-      sessionStorage.removeItem("tmp_otpMethod");
+      clearPendingAuth();
       setMsg("Login successful. Redirecting to dashboard...");
       navigate("/dashboard");
     } catch (err: any) {
@@ -63,9 +59,7 @@ export default function OtpPage() {
 
     try {
       await apiAuth("/login", { login, password, otp_method: otpMethod });
-      sessionStorage.setItem("tmp_login", login);
-      sessionStorage.setItem("tmp_password", password);
-      sessionStorage.setItem("tmp_otpMethod", otpMethod);
+      setPendingAuth({ login, password, otpMethod });
       setOtpAttempt("");
       setMsg(`A new OTP was sent via ${(otpMethod || "email").toUpperCase()}. Use the latest code only.`);
     } catch (err: any) {
