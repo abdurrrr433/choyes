@@ -246,6 +246,63 @@ frontend:
           Conclusion: Access Control dashboard redesign and account system are ready
           for production. No source files were changed during verification.
 
+  - task: "SVP registration payload — date format + contact_to_confirm enum + country_code dialing-code fix"
+    implemented: true
+    working: true
+    file: "frontend/src/lib/registration-payload.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "user"
+          comment: |
+            Postman capture of a real SVP registration submission revealed 3 payload bugs:
+              1. date_of_birth / passport_expiration_date sent as YYYY-MM-DD (HTML default),
+                 but SVP wants DD/MM/YYYY (capture: 28/02/1991, 04/03/2032).
+              2. contact_to_confirm was the user's actual email — must be enum "email".
+              3. country_code was ISO 2-letter ("BD") — capture showed dialing code ("+880").
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Fix applied via new /app/frontend/src/lib/registration-payload.ts (toApiDate +
+            resolveCountryDialingCode). RegisterPage.tsx imports them; contact_to_confirm is
+            now the literal "email". 11 new vitest tests + 76 pre-existing all green (87/87).
+            tsc --noEmit clean. Awaiting testing_agent confirmation.
+        - working: true
+          agent: "testing"
+          comment: |
+            Verified: 11/11 registration-payload.test.ts pass, full suite 87/87 across 14
+            files, no regressions. Static greps confirm contact_to_confirm is the literal
+            "email" (not form.email), toApiDate wraps both date fields in appendCommon, and
+            resolveCountryDialingCode is used in both the Country onChange handler and the
+            country_code data.set line. Module exports only the two named helpers, no default
+            export, no side effects. No TS errors, no missing files. Live browser E2E
+            skipped by design (SVP token expired per PRD backlog). Fix production-ready.
+        - working: true
+          agent: "testing"
+          comment: |
+            Unit-test-driven verification completed successfully. All 3 payload bugs confirmed fixed.
+
+            Step A — Regression suite: 11/11 tests passed in registration-payload.test.ts
+              ✓ toApiDate converts YYYY-MM-DD → DD/MM/YYYY (28/02/1991, 04/03/2032 per Postman capture)
+              ✓ Empty input handling, manual-typed values pass-through, malformed ISO guards
+              ✓ resolveCountryDialingCode prefers phone_code/dialing_code/calling_code/etc with "+" prefix
+              ✓ Bangladesh case: phone_code "880" → "+880" (not ISO "BD")
+              ✓ Fallback to legacy .code/.country_code when no dialing field present
+              ✓ Null/undefined/non-object safety, blank field skipping, numeric code handling
+
+            Step B — Full suite: 87/87 tests passed across 14 test files (no regressions)
+
+            Step C — Static verification (grep):
+              ✓ contact_to_confirm set to literal "email" (line 74, NOT form.email)
+              ✓ toApiDate() routes both date_of_birth and passport_expiration_date (line 50 in appendCommon)
+              ✓ resolveCountryDialingCode() used in Country select onChange (line 85) AND appendCommon country_code (line 53)
+              ✓ registration-payload.ts exports exactly toApiDate + resolveCountryDialingCode (no default, no side effects)
+
+            No browser E2E attempted (SVP API token expired per PRD backlog P2; 401 expected for live calls).
+            No TypeScript errors, no missing files, no test regressions. Fix is production-ready.
+
 metadata:
   created_by: "main_agent"
   version: "1.1"
@@ -254,12 +311,188 @@ metadata:
 
 test_plan:
   current_focus:
-    - "BookingPage city filter + test center display for new SVP API shape"
+    - "AI passport auto-fill (Gemini + drag-drop)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
+backend:
+  - task: "AI passport auto-fill — POST /api/passport-scan (Gemini via Emergent LLM key)"
+    implemented: true
+    working: true
+    file: "backend/passport_scan.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            New feature: passport OCR auto-fill for the registration form. User uploads or
+            drag-drops a passport photo and Gemini extracts the structured fields.
+
+            Backend:
+              - /app/backend/passport_scan.py — service module. Loads with Pillow, drops EXIF
+                orientation, downscales images > 1800px to a JPEG-88 payload, base64-encodes,
+                then calls emergentintegrations LlmChat with model gemini-2.5-flash.
+                System prompt is a strict JSON schema (passport_number / first_name /
+                last_name / date_of_birth ISO / passport_expiration_date ISO / sex /
+                nationality_code ISO-3 / country_code ISO-2 / issuing_country / confidence).
+                Response is JSON-parsed with tolerant fence-stripping + a regex fallback for
+                the first balanced JSON object. Every field is normalized (dates must match
+                YYYY-MM-DD or are blanked; sex must be male|female; confidence must be
+                high|medium|low).
+              - /app/backend/server.py — POST /api/passport-scan endpoint. Accepts multipart
+                file upload. Validates MIME (JPEG / PNG / WEBP per image_testing.md rules),
+                caps size at 8 MB, returns { ok, data } or a clean HTTPException on error.
+              - /app/backend/.env — added EMERGENT_LLM_KEY, MONGO_URL, DB_NAME.
+              - /app/backend/requirements.txt — added emergentintegrations, Pillow.
+
+            Live smoke test (main agent, before delegating to testing_agent):
+              - Generated a synthetic BGD passport JPEG with realistic front-page text and
+                MRZ, then POSTed to http://localhost:8001/api/passport-scan.
+              - Gemini responded in ~9.6s with ALL 9 fields correct (confidence: high),
+                including MRZ-derived DOB 1991-02-28 and expiry 2032-03-04, sex "male",
+                country_code "BD", nationality_code "BGD", issuing_country "BANGLADESH".
+
+            Testing scope for the testing_agent (backend):
+              - Verify POST /api/passport-scan against localhost:8001 with a small JPEG or
+                PNG of a passport-like image (see image_testing.md rules — must contain real
+                visual features, no blank/uniform images).
+              - Confirm response shape: `ok: true`, `data` has all 10 keys (passport_number,
+                first_name, last_name, date_of_birth, passport_expiration_date, sex,
+                nationality_code, country_code, issuing_country, confidence). Dates when
+                present must be YYYY-MM-DD; sex must be "" | "male" | "female"; confidence
+                must be one of high/medium/low.
+              - Negative: POST an empty body → 400. POST a text/plain → 415. POST a > 8 MB
+                image → 413 (skip if not easy to construct).
+              - Do NOT hit the Supabase edge functions or the SVP API — this endpoint is
+                isolated from that flow.
+        - working: true
+          agent: "testing"
+          comment: |
+            Backend endpoint POST /api/passport-scan fully verified and working correctly.
+            
+            Test Results: 17/17 tests passed (0 failures)
+            
+            ✅ Happy Path (synthetic BGD passport /tmp/test_passport.jpg):
+              - HTTP 200 OK
+              - Response structure: { ok: true, data: {...} } ✓
+              - All 11 required fields present: passport_number, first_name, last_name,
+                date_of_birth, passport_expiration_date, sex, nationality_code, country_code,
+                issuing_country, confidence, raw ✓
+              - Date formats: Both dates in YYYY-MM-DD format ✓
+              - sex field: "male" (valid enum) ✓
+              - confidence field: "high" (valid enum) ✓
+              - Gemini extraction accuracy: ALL fields populated correctly:
+                  * passport_number: "BC1234567"
+                  * first_name: "MOHAMMAD KARIM"
+                  * last_name: "RAHMAN"
+                  * date_of_birth: "1991-02-28"
+                  * passport_expiration_date: "2032-03-04"
+                  * sex: "male"
+                  * nationality_code: "BGD"
+                  * country_code: "BD"
+                  * issuing_country: "BANGLADESH"
+                  * confidence: "high"
+            
+            ✅ Negative Case - Unsupported MIME:
+              - HTTP 415 Unsupported Media Type ✓
+              - Error message mentions JPEG/PNG/WEBP ✓
+              - Detail: "Unsupported file type 'text/plain'. Please upload a JPEG, PNG or WEBP passport photo."
+            
+            ✅ Negative Case - Empty File:
+              - HTTP 400 Bad Request ✓
+              - Error message: "Empty file upload." ✓
+            
+            ✅ Negative Case - Oversized Upload:
+              - Skipped (constructing >8MB payload inconvenient, as per review request)
+            
+            ✅ Sanity Check - OpenAPI Registration:
+              - GET /openapi.json returns 200 ✓
+              - /api/passport-scan endpoint found in paths ✓
+            
+            No issues found. Endpoint is production-ready.
+
+frontend:
+  - task: "AI passport auto-fill — drag-drop UI on the registration page"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/auth/RegisterPage.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            RegisterPage step 1 now leads with a full-width drag-drop zone (labelled
+            "AI passport auto-fill · powered by Gemini"). Behaviour:
+              - drop / click / choose-file all funnel through attachPassport().
+              - Supported types: JPEG / PNG / WEBP → automatically calls scanPassport() and
+                populates first_name, last_name, date_of_birth (ISO), passport_expiration_date
+                (ISO), passport_number, sex, and (via matchCountry) the country dropdown.
+              - PDF or unsupported type → the file is still accepted for SVP upload; no
+                auto-fill runs and a message tells the user to fill fields manually.
+              - Live status: spinner + "Reading your passport…", then success message with
+                count of filled fields and confidence, or an error message with recovery
+                copy.
+              - Rescan and Remove buttons; preview thumbnail; drag-over state; ok/err colour
+                states. Styles live in /app/frontend/src/styles/registration-premium.css.
+
+            Client: /app/frontend/src/lib/passport-scan-client.ts wraps fetch to
+            /api/passport-scan (or VITE_PASSPORT_SCAN_URL if set). Returns typed
+            PassportScanData. Type-safe end-to-end.
+
+            The old separate <input type="file"> for "Passport document" is removed — the
+            drag-drop zone IS the passport upload (passportFile state is set on drop),
+            which is then attached as `file` in appendCommon like before, keeping the SVP
+            submit contract unchanged.
+
+            Tests + typecheck:
+              - `npx tsc --noEmit` clean.
+              - `npx vitest run` 87/87 passing (no regressions).
+              - Live end-to-end smoke: synthetic BGD passport JPEG → Gemini returns all
+                fields in ~9.6s with confidence "high" (see backend task above).
+
+            Testing scope for the testing_agent (frontend):
+              - Load the app in the Emergent preview, navigate to /auth/register.
+              - Confirm the drop-zone panel is visible at the top of step 1 with the Gemini
+                badge.
+              - Trigger the file input via the "Choose file" button and upload a
+                passport-like JPEG (see image_testing.md — real visual features required).
+              - Confirm spinner appears, then the form fields (First name, Last name, Date
+                of birth, Sex, Passport number, Passport expiration, Country) are populated.
+              - Confirm the success message with confidence indicator appears below the
+                drop-zone.
+              - Static: `contact_to_confirm` is still literal "email" (regression check for
+                the previous fix); dates still route through `toApiDate` on submit.
+
 agent_communication:
+  - agent: "main"
+    message: |
+      New feature: AI passport auto-fill with drag-drop (Gemini 2.5 Flash via Emergent LLM key).
+
+      New files:
+        - backend/passport_scan.py — service module (Pillow normalization + Gemini call + JSON parse)
+        - frontend/src/lib/passport-scan-client.ts — typed fetch wrapper for /api/passport-scan
+      Modified:
+        - backend/server.py — POST /api/passport-scan endpoint (MIME/size validation, HTTP error mapping)
+        - backend/.env — added EMERGENT_LLM_KEY, MONGO_URL, DB_NAME
+        - backend/requirements.txt — added emergentintegrations, Pillow
+        - frontend/src/pages/auth/RegisterPage.tsx — drag-drop zone at top of step 1,
+          auto-fills first_name / last_name / date_of_birth / passport_expiration_date /
+          passport_number / sex / country (from ISO code / english name match)
+        - frontend/src/styles/registration-premium.css — new .rg-dropzone* styles
+
+      Live smoke test already passing: synthetic BGD passport JPEG → all 9 fields returned
+      correctly by Gemini in ~9.6s with confidence "high". tsc clean, vitest 87/87.
+
+      Please test the BACKEND first: POST /api/passport-scan against localhost:8001 with a
+      valid passport-like JPEG (must have real visual features per /app/image_testing.md).
+      Verify response shape and the negative-case HTTP codes (400 / 413 / 415). Do NOT
+      call the SVP proxy or Supabase; this endpoint is isolated.
+
   - agent: "main"
     message: |
       Surgical fix to booking-utils.ts (2 helper functions) to support the new SVP API
@@ -268,3 +501,64 @@ agent_communication:
       No changes to svp-proxy / Supabase edge functions / UI layout.
       Frontend supervisor was failing pre-existing because of missing `start` script in
       package.json — added it; service is now RUNNING.
+  - agent: "main"
+    message: |
+      New task ready for testing: SVP registration payload — 3 fixes driven by a Postman
+      capture of a real submission.
+
+      Files:
+        - /app/frontend/src/lib/registration-payload.ts   (NEW: toApiDate, resolveCountryDialingCode)
+        - /app/frontend/src/lib/registration-payload.test.ts (NEW: 11 vitest tests)
+        - /app/frontend/src/pages/auth/RegisterPage.tsx   (imports the two helpers + contact_to_confirm="email")
+
+      Fix 1 — Date format: <input type="date"> emits YYYY-MM-DD but SVP wants DD/MM/YYYY
+              (capture: 28/02/1991 for date_of_birth, 04/03/2032 for passport_expiration_date).
+              appendCommon() now routes date_of_birth and passport_expiration_date through
+              toApiDate() before FormData.append.
+
+      Fix 2 — contact_to_confirm enum: was sending user's actual email (form.email); capture
+              proved this is a method enum like preferable_contact — literal string "email".
+
+      Fix 3 — country_code dialing code: capture showed "+880" for Bangladesh, not "BD".
+              resolveCountryDialingCode() prefers phone_code / dialing_code / calling_code /
+              dial_code / phone_prefix / international_code / phonecode (with "+" prepend),
+              then falls back to legacy `.code` / `.country_code` ISO fields.
+
+      Pre-testing verification:
+        - 87/87 vitest tests pass across 14 suites (11 new + 76 pre-existing).
+        - tsc --noEmit clean.
+
+      Testing scope for the testing_agent:
+        - Run `npx vitest run src/lib/registration-payload.test.ts` in /app/frontend and
+          confirm all 11 tests pass. This is the authoritative check — payload-shape unit tests.
+        - Then run the full suite `npx vitest run` and confirm 87/87.
+        - No live SVP call is required (SVP API token is expired per PRD backlog).
+        - No backend / MongoDB touch needed; this is pure frontend payload shaping.
+  - agent: "testing"
+    message: |
+      SVP registration payload fix verified and confirmed working via unit tests.
+      
+      All 3 bugs fixed:
+        1. Date format: toApiDate() converts YYYY-MM-DD → DD/MM/YYYY ✓
+        2. contact_to_confirm: literal "email" enum (not user's email address) ✓
+        3. country_code: dialing code "+880" (not ISO "BD") ✓
+      
+      Test results:
+        - 11/11 regression tests passed (registration-payload.test.ts)
+        - 87/87 full suite passed (no regressions)
+        - All static verification checks passed (grep confirmed correct usage)
+      
+      No browser E2E needed (SVP token expired). Fix is production-ready.
+  - agent: "testing"
+    message: |
+      Backend endpoint POST /api/passport-scan testing complete: 17/17 tests passed.
+      
+      Verified against http://localhost:8001/api/passport-scan:
+      ✅ Happy path: Gemini correctly extracted all 11 fields from synthetic BGD passport
+         with "high" confidence (passport_number=BC1234567, country_code=BD, all dates in
+         YYYY-MM-DD format, sex="male")
+      ✅ Negative cases: 415 for unsupported MIME, 400 for empty file (both with clear error messages)
+      ✅ OpenAPI: Endpoint registered in /openapi.json
+      
+      No issues found. Backend is production-ready. Frontend drag-drop UI testing is a
+      separate task (not tested per system prompt).

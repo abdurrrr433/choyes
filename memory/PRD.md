@@ -35,9 +35,14 @@ User language: Bengali (technical terms in English).
 - 2026-02 — New test file `ReservationsPage.helpers.test.ts` (7 tests covering new + legacy shapes).
 - 2026-02 — BookingPage `createHold` now sends ONLY the selected `exam_session_id` (was sending every session in the city). Regression test: `BookingPage.create-hold.test.ts`.
 - 2026-02 — **BookingPage new-booking POST now mirrors the official SVP frontend confirm step**: `site_id: null`, `site_city: null`, `hold_id: null`. Previously stale UI fallbacks (e.g. `site_id: 1` for Dhaka) were forwarded and SVP used them as an override, causing the reservation to land at a DIFFERENT centre in the same city. Captured via network trace of `svp-international.pacc.sa`. Regression test: `BookingPage.reservation-payload.test.ts`.
+- 2026-07 — **SVP registration payload — 3 Postman-capture-driven fixes** in a new `/app/frontend/src/lib/registration-payload.ts` helper module:
+    * `toApiDate()` — HTML `<input type="date">` YYYY-MM-DD → SVP-required DD/MM/YYYY. Applied to `date_of_birth` and `passport_expiration_date` in `appendCommon`.
+    * `resolveCountryDialingCode()` — country_code is a dialing code (+880 for Bangladesh per capture), not ISO "BD". Prefers `phone_code / dialing_code / calling_code / dial_code / phone_prefix / international_code / phonecode` with "+" normalization; falls back to legacy `.code` / `.country_code` ISO fields.
+    * `contact_to_confirm` is a method enum — must be the literal string `"email"`, not the user's actual email address.
+    * Regression tests: `/app/frontend/src/lib/registration-payload.test.ts` (11 tests). Full suite 87/87 across 14 files. Verified by testing_agent.
 
 ## Current Test Status
-- 56/56 Vitest tests passing across 11 suites.
+- 87/87 Vitest tests passing across 14 suites.
 
 ## Backlog
 - P2 — Obtain fresh SVP API Bearer token for live e2e verification (current Postman token returns 401).
