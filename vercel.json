@@ -4,11 +4,9 @@
   "installCommand": "cd frontend && npm install --include=dev",
   "framework": "vite",
   "env": {
-    "VITE_SUPABASE_PROJECT_ID": "zggvhvlgrfdluzxmklfj",
-    "VITE_SUPABASE_URL": "https://zggvhvlgrfdluzxmklfj.supabase.co",
-    "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpnZ3ZodmxncmZkbHV6eG1rbGZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNDg5NzYsImV4cCI6MjA5ODgyNDk3Nn0.rwVgy48xyp8tz-N_x-ZFzt6o8ETAcEJa0OwEPG6KnfY",
-    "VITE_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_u9vXKc-adL8kvsShMC5Ffg_oW3_MV_l",
-    "VITE_BACKEND_URL": "https://zggvhvlgrfdluzxmklfj.supabase.co/functions/v1"
+    "VITE_SUPABASE_PROJECT_ID": "mziyrhutfmtdczggemhe",
+    "VITE_SUPABASE_URL": "https://mziyrhutfmtdczggemhe.supabase.co",
+    "VITE_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_BX-kR5ygjqpWDivctSIwXQ_7Pcnne-o"
   },
   "rewrites": [
     {
