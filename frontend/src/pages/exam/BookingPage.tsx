@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { api, getSession, getBackendUrl, getProxyPrefix } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
@@ -662,6 +663,22 @@ export default function BookingPage() {
   }, [availableDates]);
 
   useEffect(() => { if (!selectedCity || !availableDates.length) setIsDatePickerOpen(false); }, [selectedCity, availableDates.length]);
+
+  useEffect(() => {
+    if (!isDatePickerOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsDatePickerOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isDatePickerOpen]);
 
   // Close occupation dropdown on click outside
   useEffect(() => {
@@ -1326,44 +1343,59 @@ export default function BookingPage() {
                 <CalendarDays className="bk-trigger-icon" size={17} aria-hidden="true" />
               </button>
               {isDatePickerOpen && selectedCity && availableDates.length ? (
-                <div className="bk-popup bk-date-popup">
-                  <div className="bk-date-head">
-                    <strong>Select date</strong>
-                    <button type="button" className="bk-icon-btn" aria-label="Close calendar" onClick={() => setIsDatePickerOpen(false)}>
-                      <X size={16} aria-hidden="true" />
-                    </button>
-                  </div>
-                  <div className="bk-date-tools">
-                    <button type="button" className="bk-icon-btn" aria-label="Previous month" onClick={() => shiftCalendarMonth(-1)}>
-                      <ChevronLeft size={17} aria-hidden="true" />
-                    </button>
-                    <select className="bk-tool-select bk-tool-select--month" aria-label="Calendar month" value={calendarCursorDate.getMonth()}
-                      onChange={(e) => { const next = new Date(calendarCursorDate); next.setMonth(Number(e.target.value)); setCalendarMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`); }}>
-                      {Array.from({ length: 12 }, (_, index) => <option key={index} value={index}>{new Date(2000, index, 1).toLocaleDateString("en-US", { month: "long" })}</option>)}
-                    </select>
-                    <select className="bk-tool-select bk-tool-select--year" aria-label="Calendar year" value={calendarYear}
-                      onChange={(e) => { const next = new Date(calendarCursorDate); next.setFullYear(Number(e.target.value)); setCalendarMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`); }}>
-                      {calendarYearOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                    </select>
-                    <button type="button" className="bk-icon-btn" aria-label="Next month" onClick={() => shiftCalendarMonth(1)}>
-                      <ChevronRight size={17} aria-hidden="true" />
-                    </button>
-                  </div>
-                  <div className="bk-weekdays">
-                    <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
-                  </div>
-                  <div className="bk-calendar">
-                    {calendarDays.map((item) =>
-                      item.empty ? <div key={item.key} className="bk-cell bk-cell--empty" /> : (
-                        <button key={item.key} type="button"
-                          className={`bk-cell${item.available ? " bk-cell--available" : ""}${item.iso === availableDate ? " bk-cell--active" : ""}`}
-                          onClick={() => item.available && pickDateFromCalendar(item.iso!)} disabled={!item.available}>
-                          {item.day}
+                createPortal(
+                  <div className="bk-calendar-overlay" onMouseDown={() => setIsDatePickerOpen(false)}>
+                    <div
+                      className="bk-popup bk-date-popup"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="Select available date"
+                      onMouseDown={(event) => event.stopPropagation()}
+                    >
+                      <div className="bk-date-head">
+                        <div>
+                          <strong>Select available date</strong>
+                          <small>{selectedCity}</small>
+                        </div>
+                        <button type="button" className="bk-icon-btn" aria-label="Close calendar" onClick={() => setIsDatePickerOpen(false)}>
+                          <X size={16} aria-hidden="true" />
                         </button>
-                      )
-                    )}
-                  </div>
-                </div>
+                      </div>
+                      <div className="bk-date-tools">
+                        <button type="button" className="bk-icon-btn" aria-label="Previous month" onClick={() => shiftCalendarMonth(-1)}>
+                          <ChevronLeft size={17} aria-hidden="true" />
+                        </button>
+                        <select className="bk-tool-select bk-tool-select--month" aria-label="Calendar month" value={calendarCursorDate.getMonth()}
+                          onChange={(e) => { const next = new Date(calendarCursorDate); next.setMonth(Number(e.target.value)); setCalendarMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`); }}>
+                          {Array.from({ length: 12 }, (_, index) => <option key={index} value={index}>{new Date(2000, index, 1).toLocaleDateString("en-US", { month: "long" })}</option>)}
+                        </select>
+                        <select className="bk-tool-select bk-tool-select--year" aria-label="Calendar year" value={calendarYear}
+                          onChange={(e) => { const next = new Date(calendarCursorDate); next.setFullYear(Number(e.target.value)); setCalendarMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`); }}>
+                          {calendarYearOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                        </select>
+                        <button type="button" className="bk-icon-btn" aria-label="Next month" onClick={() => shiftCalendarMonth(1)}>
+                          <ChevronRight size={17} aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className="bk-weekdays">
+                        <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                      </div>
+                      <div className="bk-calendar">
+                        {calendarDays.map((item) =>
+                          item.empty ? <div key={item.key} className="bk-cell bk-cell--empty" /> : (
+                            <button key={item.key} type="button"
+                              className={`bk-cell${item.available ? " bk-cell--available" : ""}${item.iso === availableDate ? " bk-cell--active" : ""}`}
+                              onClick={() => item.available && pickDateFromCalendar(item.iso!)} disabled={!item.available}>
+                              {item.day}
+                            </button>
+                          )
+                        )}
+                      </div>
+                      <p className="bk-date-help">Only highlighted dates are available. Selecting a date closes this calendar automatically.</p>
+                    </div>
+                  </div>,
+                  document.body,
+                )
               ) : null}
               {!loadingDates && selectedCity && !availableDates.length ? (
                 <small className="bk-error-text">No available dates found yet. Try another city or occupation.</small>

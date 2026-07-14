@@ -285,22 +285,54 @@
 .bk-popup-item:hover { background: rgba(240, 200, 105, 0.08); color: var(--bk-gold); }
 .bk-popup-item--active { background: rgba(240, 200, 105, 0.14); color: var(--bk-gold); }
 
-/* Date picker
-   Keep the calendar in the document flow. The booking summary is a later
-   backdrop-filter stacking context, so an absolute calendar can be painted
-   underneath it and its lower dates become impossible to click. */
+/* Date picker overlay — portalled to body so panel stacking contexts cannot
+   cover the calendar or intercept date clicks. */
+.bk-calendar-overlay {
+  --bk-panel-border: rgba(240, 200, 105, 0.18);
+  --bk-glass-border: rgba(255, 255, 255, 0.08);
+  --bk-gold: #f0c869;
+  --bk-gold-deep: #d4a437;
+  --bk-text: #eef1fb;
+  --bk-muted: #93a0c4;
+
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--bk-text);
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  background: rgba(3, 6, 18, 0.76);
+  backdrop-filter: blur(7px);
+  animation: bk-overlay-in 0.16s ease-out;
+}
+@keyframes bk-overlay-in { from { opacity: 0; } to { opacity: 1; } }
 .bk-date-popup {
-  position: static;
-  width: 100%;
-  margin-top: 2px;
-  padding: 12px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+  position: relative;
+  inset: auto;
+  width: min(430px, calc(100vw - 48px));
+  max-height: calc(100dvh - 48px);
+  margin: 0;
+  padding: 20px;
+  overflow-y: auto;
+  border-radius: 18px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.68);
+  animation: bk-calendar-in 0.18s ease-out;
+}
+@keyframes bk-calendar-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .bk-date-head {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
-.bk-date-head strong { font-size: 14px; font-weight: 700; letter-spacing: 0.02em; }
+.bk-date-head > div { display: flex; flex-direction: column; gap: 3px; }
+.bk-date-head strong { font-size: 16px; font-weight: 800; letter-spacing: 0.01em; }
+.bk-date-head small { color: var(--bk-muted); font-size: 11.5px; }
 .bk-icon-btn {
   width: 32px; height: 32px; border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
@@ -319,7 +351,7 @@
   align-items: center;
   margin-bottom: 14px;
 }
-.bk-field .bk-tool-select {
+.bk-tool-select {
   width: 100%;
   min-width: 0;
   min-height: 34px;
@@ -366,6 +398,13 @@
   color: #1a1405;
   border-color: transparent;
   box-shadow: 0 6px 16px rgba(240, 200, 105, 0.35);
+}
+.bk-date-help {
+  margin: 14px 0 0;
+  color: var(--bk-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 /* Meta grid — booking details */
@@ -467,9 +506,15 @@
   .bk-hero-links { width: 100%; justify-content: flex-start; }
   .bk-panel { padding: 20px 14px; border-radius: 18px; }
   .bk-form-grid { grid-template-columns: 1fr; }
+  .bk-calendar-overlay {
+    align-items: flex-end;
+    padding: 12px;
+  }
   .bk-date-popup {
-    padding: 10px 8px 12px;
-    border-radius: 12px;
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    padding: 18px 12px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 20px;
   }
   .bk-date-head { margin-bottom: 10px; }
   .bk-date-tools {
@@ -478,7 +523,7 @@
     margin-bottom: 12px;
   }
   .bk-date-tools .bk-icon-btn { width: 36px; height: 36px; }
-  .bk-field .bk-tool-select { min-height: 36px; }
+  .bk-tool-select { min-height: 36px; }
   .bk-weekdays,
   .bk-calendar { gap: 2px; }
   .bk-weekdays { margin-bottom: 4px; }
