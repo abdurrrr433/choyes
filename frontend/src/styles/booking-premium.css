@@ -285,8 +285,17 @@
 .bk-popup-item:hover { background: rgba(240, 200, 105, 0.08); color: var(--bk-gold); }
 .bk-popup-item--active { background: rgba(240, 200, 105, 0.14); color: var(--bk-gold); }
 
-/* Date picker */
-.bk-date-popup { padding: 12px; }
+/* Date picker
+   Keep the calendar in the document flow. The booking summary is a later
+   backdrop-filter stacking context, so an absolute calendar can be painted
+   underneath it and its lower dates become impossible to click. */
+.bk-date-popup {
+  position: static;
+  width: 100%;
+  margin-top: 2px;
+  padding: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+}
 .bk-date-head {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 12px;
@@ -456,13 +465,33 @@
   .bk-hero h1 { font-size: 22px; }
   .bk-hero p { font-size: 13px; }
   .bk-hero-links { width: 100%; justify-content: flex-start; }
-  .bk-panel { padding: 20px 18px; border-radius: 18px; }
+  .bk-panel { padding: 20px 14px; border-radius: 18px; }
   .bk-form-grid { grid-template-columns: 1fr; }
   .bk-date-popup {
-    position: static;
-    margin-top: 2px;
-    overflow: visible;
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+    padding: 10px 8px 12px;
+    border-radius: 12px;
+  }
+  .bk-date-head { margin-bottom: 10px; }
+  .bk-date-tools {
+    grid-template-columns: 36px minmax(0, 1fr) 78px 36px;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .bk-date-tools .bk-icon-btn { width: 36px; height: 36px; }
+  .bk-field .bk-tool-select { min-height: 36px; }
+  .bk-weekdays,
+  .bk-calendar { gap: 2px; }
+  .bk-weekdays { margin-bottom: 4px; }
+  .bk-cell {
+    min-height: 42px;
+    border-radius: 9px;
+    font-size: 13px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .bk-cell--available:not(.bk-cell--active) {
+    background: rgba(240, 200, 105, 0.10);
+    border-color: rgba(240, 200, 105, 0.34);
   }
   .bk-steps { grid-template-columns: 1fr; padding: 12px; }
   .bk-step-copy small { font-size: 9.5px; }
