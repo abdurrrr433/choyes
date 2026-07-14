@@ -39,8 +39,9 @@ export default function AccessLoginPage() {
         setMsgType("ok");
         navigate("/auth/login");
       }
-    } catch (err: any) {
-      const detail = err?.data?.message || err?.message || "Login failed";
+    } catch (error: unknown) {
+      const value = error as { message?: string; data?: { message?: unknown } };
+      const detail = value.data?.message || value.message || "Login failed";
       setMsg(typeof detail === "string" ? detail : JSON.stringify(detail));
       setMsgType("error");
     } finally {
@@ -136,6 +137,7 @@ export default function AccessLoginPage() {
 
             <div className="ap-footer">
               <Link to="/access/forgot-password" className="ap-link">Forgot password?</Link>
+              <span className="ap-hint"> · New candidate? <Link to="/access/register">Create account</Link></span>
             </div>
           </form>
         </div>

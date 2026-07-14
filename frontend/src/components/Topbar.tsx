@@ -4,12 +4,14 @@ import { Button } from "@/components/ui/button";
 import { LogOut, Menu } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useAccessAuth } from "@/contexts/AccessAuthContext";
 
 export default function Topbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { hasPermission } = useAccessAuth();
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -52,8 +54,9 @@ export default function Topbar() {
         <div className="border-b border-border bg-card p-4 lg:hidden">
           <nav className="grid gap-2">
             <Link to="/dashboard" className="rounded-lg px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}>Dashboard</Link>
-            <Link to="/exam/reservations" className="rounded-lg px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}>My bookings</Link>
-            <Link to="/exam/booking" className="rounded-lg px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}>New booking</Link>
+            {hasPermission("reservation.manage") && <Link to="/exam/reservations" className="rounded-lg px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}>My bookings</Link>}
+            {hasPermission("booking.create") && <Link to="/exam/booking" className="rounded-lg px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}>New booking</Link>}
+            <Link to="/wallet" className="rounded-lg px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}>Wallet & credits</Link>
           </nav>
         </div>
       )}

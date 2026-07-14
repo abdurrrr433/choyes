@@ -13,6 +13,7 @@ import {
   formatDateLabel, detectBookingMode, resolveSessionCenter, SectionCenterRule,
 } from "@/lib/booking-utils";
 import "@/styles/booking-premium.css";
+import { useAccessAuth } from "@/contexts/AccessAuthContext";
 
 const FALLBACK_TEST_CENTERS: { siteId: string; name: string; city: string }[] = [
   { siteId: "17", name: "Bangladesh Korea TTC Dhaka", city: "Dhaka" },
@@ -53,6 +54,7 @@ function fallbackCentersForCity(city: string) {
 
 export default function BookingPage() {
   const [searchParams] = useSearchParams();
+  const { hasPermission } = useAccessAuth();
   const [occupations, setOccupations] = useState<any[]>([]);
   const [availableDateEntries, setAvailableDateEntries] = useState<{ city: string; date: string }[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
@@ -1134,7 +1136,7 @@ export default function BookingPage() {
         if (nextReservationId) {
           if (bookingMode.type === "paid") {
             await openPaymentPage(String(nextReservationId));
-          } else {
+          } else if (hasPermission("reservation.manage")) {
             await openTicketPdf(String(nextReservationId), data);
           }
         }
@@ -1189,7 +1191,11 @@ export default function BookingPage() {
     const { accessToken } = getSession();
     const base = getBackendUrl();
     const response = await fetch(`${base}${getProxyPrefix()}/tickets/${encodeURIComponent(nextReservationId)}/show-pdf?locale=en`, {
-      method: "GET", headers: { Accept: "*/*", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+      method: "GET", headers: {
+        Accept: "*/*",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(localStorage.getItem("access_token") ? { "X-Access-Token": localStorage.getItem("access_token")! } : {}),
+      },
     });
     if (!response.ok) { throw new Error(await response.text() || "Failed to open ticket PDF"); }
     const contentType = response.headers.get("content-type") || "";
@@ -1242,7 +1248,7 @@ export default function BookingPage() {
               <p>Choose your occupation, city, date and test centre. Every step syncs live with the SVP platform to keep seats accurate.</p>
             </div>
             <div className="bk-hero-links">
-              <Link to="/exam/reservations" className="bk-hero-link">☰ My bookings</Link>
+              {hasPermission("reservation.manage") && <Link to="/exam/reservations" className="bk-hero-link">☰ My bookings</Link>}
               <Link to="/dashboard" className="bk-hero-link">◈ Dashboard</Link>
               <Link to="/dashboard" className="bk-hero-link bk-hero-link--close" aria-label="Close">×</Link>
             </div>

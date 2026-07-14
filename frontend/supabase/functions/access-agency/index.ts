@@ -11,7 +11,8 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const JWT_SECRET_RAW = Deno.env.get("JWT_ACCESS_SECRET") || "access-backend-secret-key-change-me";
+const JWT_SECRET_RAW = Deno.env.get("JWT_ACCESS_SECRET");
+if (!JWT_SECRET_RAW) throw new Error("JWT_ACCESS_SECRET is required");
 
 async function getJwtKey() {
   const encoder = new TextEncoder();
@@ -29,6 +30,7 @@ function publicAccount(a: any) {
   return {
     id: a.id, name: a.name, email: a.email, role: a.role, status: a.status,
     agency_id: a.agency_id, created_by_id: a.created_by_id,
+    permission_mode: a.permission_mode || "LEGACY", self_registered: Boolean(a.self_registered),
     created_at: a.created_at, updated_at: a.updated_at,
   };
 }
@@ -59,9 +61,27 @@ serve(async (req) => {
   const path = url.pathname.replace(/^\/access-agency/, "");
   const supabase = getSupabase();
 
+  const { data: actorAccount } = await supabase.from("accounts")
+    .select("id,role,status,permission_mode")
+    .eq("id", auth.sub)
+    .single();
+  if (!actorAccount || actorAccount.role !== "AGENCY" || actorAccount.status !== "ACTIVE") {
+    return new Response(JSON.stringify({ message: "Agency account is not active" }), {
+      status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     // POST /users
     if (path === "/users" && req.method === "POST") {
+      const { data: userCreatePermission } = await supabase.from("account_permissions")
+        .select("allowed").eq("account_id", auth.sub).eq("permission_key", "users.create").single();
+      const canCreateUsers = actorAccount.permission_mode !== "MANAGED" || userCreatePermission?.allowed === true;
+      if (!canCreateUsers) {
+        return new Response(JSON.stringify({ message: "User creation permission is required" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const { name, email, password, status } = await req.json();
       if (!name || !email || !password) {
         return new Response(JSON.stringify({ message: "name, email, password required" }), {
@@ -81,6 +101,7 @@ serve(async (req) => {
         name, email: email.toLowerCase(), password: hash,
         role: "USER", status: status || "PENDING",
         agency_id: auth.sub, created_by_id: auth.sub,
+        permission_mode: "MANAGED",
       }).select().single();
 
       if (error) throw error;

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 
 // All four env vars are needed for full Supabase admin access.
 // The backend only uses Supabase for the optional /health/supabase
@@ -30,7 +31,10 @@ export function createSupabaseAnon() {
   return createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_PUBLISHABLE_KEY,
-    { auth: { persistSession: false } }
+    {
+      auth: { persistSession: false },
+      realtime: { transport: WebSocket },
+    }
   );
 }
 
@@ -39,7 +43,10 @@ export function createSupabaseAdmin() {
   return createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SECRET_KEY,
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+      realtime: { transport: WebSocket },
+    }
   );
 }
 

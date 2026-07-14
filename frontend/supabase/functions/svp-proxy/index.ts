@@ -1,9 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { verify } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-access-token, x-request-id, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 };
 
@@ -29,6 +30,61 @@ const SVP_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
 const T2HUB_BASE = "https://t2hub.app";
 const T2HUB_APP_PATH = "/takamol";
+const ACCESS_JWT_SECRET = Deno.env.get("JWT_ACCESS_SECRET");
+if (!ACCESS_JWT_SECRET) throw new Error("JWT_ACCESS_SECRET is required");
+
+async function getAccessJwtKey() {
+  return crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(ACCESS_JWT_SECRET),
+    { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
+  );
+}
+
+async function requireAccessPermission(req: Request, permissionKey: string) {
+  const token = req.headers.get("x-access-token")?.trim();
+  if (!token) throw { statusCode: 401, message: "Access Portal login is required" };
+  let payload: { sub?: string };
+  try {
+    payload = await verify(token, await getAccessJwtKey()) as { sub?: string };
+  } catch {
+    throw { statusCode: 401, message: "Access Portal session expired" };
+  }
+  const supabase = getSupabase();
+  const { data: account } = await supabase
+    .from("accounts")
+    .select("id,role,status,permission_mode")
+    .eq("id", payload.sub || "")
+    .single();
+  if (!account || account.status !== "ACTIVE" || account.role !== "USER") {
+    throw { statusCode: 403, message: "Active candidate account is required" };
+  }
+  if (account.permission_mode === "MANAGED") {
+    const { data: permission } = await supabase.from("account_permissions")
+      .select("allowed").eq("account_id", account.id).eq("permission_key", permissionKey).single();
+    if (permission?.allowed !== true) {
+      throw { statusCode: 403, message: `${permissionKey} permission is required` };
+    }
+  }
+  return { supabase, account };
+}
+
+function findReservationId(value: any): string {
+  const direct = value?.exam_reservation?.id || value?.reservation?.id || value?.data?.exam_reservation?.id || value?.data?.reservation?.id;
+  if (direct !== undefined && direct !== null && direct !== "") return String(direct);
+  const queue = [value];
+  const seen = new Set<any>();
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    for (const key of ["reservation_id", "exam_reservation_id", "reservationId"]) {
+      if (current[key] !== undefined && current[key] !== null && current[key] !== "") return String(current[key]);
+    }
+    if (current.id !== undefined && current.id !== null && /reservation/i.test(String(current.type || current.resource || ""))) return String(current.id);
+    queue.push(...Object.values(current));
+  }
+  return "";
+}
 
 let t2hubSession:
   | { keyRaw: string; cookie: string; appPath: string; expiresAt: number }
@@ -485,6 +541,7 @@ Deno.serve(async (req) => {
     // ── Ticket PDF ────────────────────────────────────────────
     const pdfMatch = path.match(/^\/tickets\/([^/]+)\/show-pdf$/);
     if (req.method === "GET" && pdfMatch) {
+      await requireAccessPermission(req, "reservation.manage");
       const upstream = await svpFetchRaw(
         buildPath(`/api/v1/individual_labor_space/tickets/${pdfMatch[1]}/show_pdf`, query),
         svpToken
@@ -510,8 +567,59 @@ Deno.serve(async (req) => {
 
       const svpPath = typeof route.svpPath === "function" ? route.svpPath(match, query) : route.svpPath;
       const body = route.bodyForward ? await req.json().catch(() => ({})) : undefined;
-      const data = await svpFetch(buildPath(svpPath, query), { method: route.method, token: svpToken, body });
-      return json(data);
+
+      const isBookingCreate = req.method === "POST" && path === "/exam-reservations";
+      const isBookingPreparation = req.method === "POST" && (path === "/temporary-seats" || path === "/reservation-credits/use");
+      const isPaymentCreate = req.method === "POST" && path === "/payments";
+      const isReservationManagement =
+        (req.method === "GET" && /^\/exam-reservations(?:\/[^/]+)?$/.test(path)) ||
+        (req.method === "DELETE" && /^\/exam-reservations\/[^/]+$/.test(path)) ||
+        (req.method === "POST" && /^\/exam-reservations\/[^/]+\/reschedule$/.test(path));
+      let accessContext: Awaited<ReturnType<typeof requireAccessPermission>> | null = null;
+      let walletHoldId = "";
+
+      if (isReservationManagement) {
+        accessContext = await requireAccessPermission(req, "reservation.manage");
+      } else if (isBookingCreate || isBookingPreparation) {
+        accessContext = await requireAccessPermission(req, "booking.create");
+      } else if (isPaymentCreate) {
+        accessContext = await requireAccessPermission(req, "payment.create");
+      }
+
+      if (isBookingCreate && accessContext?.account.permission_mode === "MANAGED") {
+        const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
+        const { data: holdId, error: holdError } = await accessContext.supabase.rpc("wallet_place_booking_hold", {
+          p_account_id: accessContext.account.id,
+          p_amount: 1,
+          p_idempotency_key: `booking-request:${accessContext.account.id}:${requestId}`,
+        });
+        if (holdError) throw { statusCode: 402, message: holdError.message || "Insufficient wallet balance" };
+        walletHoldId = String(holdId || "");
+      }
+
+      try {
+        const data: any = await svpFetch(buildPath(svpPath, query), { method: route.method, token: svpToken, body });
+        if (isBookingCreate && walletHoldId && accessContext) {
+          const reservationId = findReservationId(data) || `svp-success:${req.headers.get("x-request-id") || walletHoldId}`;
+          const { data: walletTransaction, error: completeError } = await accessContext.supabase.rpc("wallet_complete_booking_hold", {
+            p_hold_id: walletHoldId,
+            p_reservation_id: reservationId,
+            p_metadata: { source: "svp-proxy", svp_success: true },
+          });
+          if (completeError) {
+            throw { statusCode: 500, message: "Reservation completed but wallet finalization failed", details: { reservationId, reason: completeError.message } };
+          }
+          if (data && typeof data === "object" && !Array.isArray(data)) {
+            return json({ ...data, access_wallet: { charged: 1, balance_after: walletTransaction?.balance_after, transaction_id: walletTransaction?.id } });
+          }
+        }
+        return json(data);
+      } catch (error) {
+        if (walletHoldId && accessContext) {
+          await accessContext.supabase.rpc("wallet_release_booking_hold", { p_hold_id: walletHoldId });
+        }
+        throw error;
+      }
     }
 
     return json({ error: "Not found" }, 404);

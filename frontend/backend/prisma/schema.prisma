@@ -8,34 +8,38 @@ generator client {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  login     String   @unique
-  svpUserId Int?
-  email     String?
-  fullName  String?
-  phone     String?
-  passwordHash String?
-  role      String   @default("USER")
-  isApproved Boolean @default(false)
-  approvedAt DateTime?
-  createdAt DateTime @default(now())
+  id           String    @id @default(cuid())
+  login        String    @unique
+  svpUserId    Int?      @map("svp_user_id")
+  email        String?
+  fullName     String?   @map("full_name")
+  phone        String?
+  passwordHash String?   @map("password_hash")
+  role         String    @default("USER")
+  isApproved   Boolean   @default(false) @map("is_approved")
+  approvedAt   DateTime? @map("approved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  sessions  Session[]
+  sessions Session[]
+
+  @@map("svp_users")
 }
 
 model Session {
-  id               String   @id @default(cuid())
-  userId           String
-  user             User     @relation(fields: [userId], references: [id])
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  refreshTokenHash String
-  refreshExpiresAt DateTime
-  revokedAt        DateTime?
+  refreshTokenHash String    @map("refresh_token_hash")
+  refreshExpiresAt DateTime  @map("refresh_expires_at")
+  revokedAt        DateTime? @map("revoked_at")
 
   // Encrypted SVP access token for server-to-server calls
-  svpAccessEnc     String?
-  svpAccessExp     DateTime?
+  svpAccessEnc String?   @map("svp_access_enc")
+  svpAccessExp DateTime? @map("svp_access_exp")
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("svp_sessions")
 }

@@ -136,12 +136,15 @@ async function callFunction<T = any>(
 
   const session = getSession();
   let access = token || session.accessToken;
+  const requestId = crypto.randomUUID();
 
   const makeOpts = (accessToken: string | null): RequestInit => ({
     method,
     headers: {
       "Content-Type": "application/json",
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(localStorage.getItem("access_token") ? { "X-Access-Token": localStorage.getItem("access_token")! } : {}),
+      ...(method !== "GET" ? { "X-Request-Id": requestId } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

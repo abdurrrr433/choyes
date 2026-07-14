@@ -7,6 +7,7 @@ import {
   type PaymentRecord,
 } from "@/lib/payments";
 import "@/styles/dashboard-premium.css";
+import { useAccessAuth } from "@/contexts/AccessAuthContext";
 
 function decodeJwtPayload(token: string) {
   try {
@@ -46,6 +47,7 @@ const BADGE_LABEL: Record<PaymentRecord["status"], string> = {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { hasPermission } = useAccessAuth();
   const [me, setMe] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -121,9 +123,9 @@ export default function DashboardPage() {
           </Link>
 
           <div className="dp-nav-label" style={{ marginTop: 12 }}>Exams</div>
-          <Link className="dp-nav-item" to="/exam/reservations" onClick={() => setMenuOpen(false)}>
+          {hasPermission("reservation.manage") && <Link className="dp-nav-item" to="/exam/reservations" onClick={() => setMenuOpen(false)}>
             <span className="dp-nav-ico">☰</span> My bookings
-          </Link>
+          </Link>}
           <Link className="dp-nav-item" to="/exam/booking" onClick={() => setMenuOpen(false)}>
             <span className="dp-nav-ico">+</span> New booking
           </Link>
@@ -169,7 +171,7 @@ export default function DashboardPage() {
               <p>Manage bookings, review reservations and track every payment attempt from one premium workspace — always in sync with the official SVP platform.</p>
               <div className="dp-hero-actions">
                 <Link className="dp-hero-cta" to="/exam/booking">Start Verification →</Link>
-                <Link className="dp-hero-cta dp-hero-cta--ghost" to="/exam/reservations">View bookings</Link>
+                {hasPermission("reservation.manage") && <Link className="dp-hero-cta dp-hero-cta--ghost" to="/exam/reservations">View bookings</Link>}
               </div>
             </div>
             <div className="dp-hero-aside">
@@ -297,12 +299,12 @@ export default function DashboardPage() {
               <p>Search occupations, pick a centre and reserve a seat in a few taps.</p>
               <em>Book now →</em>
             </Link>
-            <Link to="/exam/reservations" className="dp-quick-card">
+            {hasPermission("reservation.manage") && <Link to="/exam/reservations" className="dp-quick-card">
               <div className="dp-quick-ico">☰</div>
               <h3>My bookings</h3>
               <p>Review upcoming exams, download tickets and reschedule when needed.</p>
               <em>View bookings →</em>
-            </Link>
+            </Link>}
             <Link to="/exam/booking" className="dp-quick-card">
               <div className="dp-quick-ico">↻</div>
               <h3>Retry payment</h3>

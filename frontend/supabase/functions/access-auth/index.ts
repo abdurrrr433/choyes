@@ -11,7 +11,9 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const JWT_SECRET_RAW = Deno.env.get("JWT_ACCESS_SECRET") || "access-backend-secret-key-change-me";
+const JWT_SECRET_RAW = Deno.env.get("JWT_ACCESS_SECRET");
+if (!JWT_SECRET_RAW) throw new Error("JWT_ACCESS_SECRET is required");
+const PERMISSION_KEYS = ["booking.create", "reservation.manage", "payment.create", "wallet.deposit", "users.create"];
 
 // Create crypto key for JWT
 async function getJwtKey() {
@@ -38,9 +40,27 @@ function publicAccount(account: any) {
     status: account.status,
     agency_id: account.agency_id,
     created_by_id: account.created_by_id,
+    permission_mode: account.permission_mode || "LEGACY",
+    self_registered: Boolean(account.self_registered),
     created_at: account.created_at,
     updated_at: account.updated_at,
   };
+}
+
+async function permissionsFor(supabase: ReturnType<typeof getSupabase>, account: any) {
+  if (account.role === "ADMIN") return Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true]));
+  const permissions: Record<string, boolean> = account.permission_mode === "MANAGED"
+    ? Object.fromEntries(PERMISSION_KEYS.map((key) => [key, false]))
+    : {
+      "booking.create": account.role === "USER",
+      "reservation.manage": account.role === "USER",
+      "payment.create": account.role === "USER",
+      "wallet.deposit": false,
+      "users.create": account.role === "AGENCY",
+    };
+  const { data } = await supabase.from("account_permissions").select("permission_key,allowed").eq("account_id", account.id);
+  for (const row of data || []) if (PERMISSION_KEYS.includes(row.permission_key)) permissions[row.permission_key] = Boolean(row.allowed);
+  return permissions;
 }
 
 async function signToken(payload: { sub: string; role: string }) {
@@ -102,11 +122,12 @@ serve(async (req) => {
       }
 
       const token = await signToken({ sub: account.id, role: account.role });
+      const permissions = await permissionsFor(supabase, account);
 
       return new Response(JSON.stringify({
         message: "Login successful",
         accessToken: token,
-        user: publicAccount(account),
+        user: { ...publicAccount(account), permissions },
       }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -149,7 +170,14 @@ serve(async (req) => {
         });
       }
 
-      return new Response(JSON.stringify({ user: publicAccount(account) }), {
+      if (account.status !== "ACTIVE") {
+        return new Response(JSON.stringify({ message: "Account is not active" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const permissions = await permissionsFor(supabase, account);
+      return new Response(JSON.stringify({ user: { ...publicAccount(account), permissions } }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -185,13 +213,55 @@ serve(async (req) => {
       }
 
       const newToken = await signToken({ sub: account.id, role: account.role });
+      const permissions = await permissionsFor(supabase, account);
       return new Response(JSON.stringify({
         message: "Token refreshed",
         accessToken: newToken,
-        user: publicAccount(account),
+        user: { ...publicAccount(account), permissions },
       }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // POST /register — public Access Portal registration. The role is always
+    // USER and managed permissions start disabled until an admin grants them.
+    if (path === "/register" && req.method === "POST") {
+      const { name, email, password } = await req.json();
+      const normalizedEmail = String(email || "").trim().toLowerCase();
+      if (!String(name || "").trim() || !/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+        return new Response(JSON.stringify({ message: "Valid name and email are required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (typeof password !== "string" || password.length < 8) {
+        return new Response(JSON.stringify({ message: "Password must be at least 8 characters" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: existing } = await supabase.from("accounts").select("id").eq("email", normalizedEmail).single();
+      if (existing) {
+        return new Response(JSON.stringify({ message: "Email already in use" }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: account, error } = await supabase.from("accounts").insert({
+        name: String(name).trim().slice(0, 160),
+        email: normalizedEmail,
+        password: bcrypt.hashSync(password),
+        role: "USER",
+        status: "ACTIVE",
+        permission_mode: "MANAGED",
+        self_registered: true,
+      }).select().single();
+      if (error) throw error;
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: account.id, target_account_id: account.id,
+        action: "account.self_registered", details: { email: normalizedEmail },
+      });
+      return new Response(JSON.stringify({
+        message: "Account created. An administrator must grant booking, reservation, payment, or deposit permissions.",
+        user: { ...publicAccount(account), permissions: await permissionsFor(supabase, account) },
+      }), { status: 201, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // POST /bootstrap - create default admin

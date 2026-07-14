@@ -11,7 +11,9 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const JWT_SECRET_RAW = Deno.env.get("JWT_ACCESS_SECRET") || "access-backend-secret-key-change-me";
+const JWT_SECRET_RAW = Deno.env.get("JWT_ACCESS_SECRET");
+if (!JWT_SECRET_RAW) throw new Error("JWT_ACCESS_SECRET is required");
+const PERMISSION_KEYS = ["booking.create", "reservation.manage", "payment.create", "wallet.deposit", "users.create"];
 
 async function getJwtKey() {
   const encoder = new TextEncoder();
@@ -29,6 +31,7 @@ function publicAccount(a: any) {
   return {
     id: a.id, name: a.name, email: a.email, role: a.role, status: a.status,
     agency_id: a.agency_id, created_by_id: a.created_by_id,
+    permission_mode: a.permission_mode || "LEGACY", self_registered: Boolean(a.self_registered),
     created_at: a.created_at, updated_at: a.updated_at,
   };
 }
@@ -62,6 +65,16 @@ serve(async (req) => {
   const path = url.pathname.replace(/^\/access-admin/, "");
   const supabase = getSupabase();
 
+  const { data: actorAccount } = await supabase.from("accounts")
+    .select("id,role,status")
+    .eq("id", auth.sub)
+    .single();
+  if (!actorAccount || actorAccount.role !== "ADMIN" || actorAccount.status !== "ACTIVE") {
+    return new Response(JSON.stringify({ message: "Admin account is not active" }), {
+      status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     // POST /agencies
     if (path === "/agencies" && req.method === "POST") {
@@ -83,6 +96,7 @@ serve(async (req) => {
       const { data: account, error } = await supabase.from("accounts").insert({
         name, email: email.toLowerCase(), password: hash,
         role: "AGENCY", status: status || "PENDING", created_by_id: auth.sub,
+        permission_mode: "MANAGED",
       }).select().single();
 
       if (error) throw error;
@@ -121,6 +135,7 @@ serve(async (req) => {
         name, email: email.toLowerCase(), password: hash,
         role: "USER", status: status || "PENDING",
         agency_id: agencyId || null, created_by_id: auth.sub,
+        permission_mode: "MANAGED",
       }).select().single();
 
       if (error) throw error;
@@ -199,6 +214,119 @@ serve(async (req) => {
       return new Response(JSON.stringify({ accounts: (accounts || []).map(publicAccount) }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // GET /accounts/:id/access — permissions, wallet, deposits, and ledger.
+    const accessMatch = path.match(/^\/accounts\/([^/]+)\/access$/);
+    if (accessMatch && req.method === "GET") {
+      const accountId = accessMatch[1];
+      const [accountResult, permissionsResult, walletResult, transactionsResult, depositsResult] = await Promise.all([
+        supabase.from("accounts").select("*").eq("id", accountId).single(),
+        supabase.from("account_permissions").select("permission_key,allowed,note,updated_at").eq("account_id", accountId),
+        supabase.from("wallets").select("balance,currency,updated_at").eq("account_id", accountId).single(),
+        supabase.from("wallet_transactions").select("*").eq("account_id", accountId).order("created_at", { ascending: false }).limit(100),
+        supabase.from("deposit_requests").select("*").eq("account_id", accountId).order("created_at", { ascending: false }).limit(50),
+      ]);
+      if (!accountResult.data) {
+        return new Response(JSON.stringify({ message: "Account not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({
+        account: publicAccount(accountResult.data),
+        permissions: permissionsResult.data || [],
+        wallet: walletResult.data || { balance: 0, currency: "CREDIT" },
+        transactions: transactionsResult.data || [],
+        deposits: depositsResult.data || [],
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // PUT /accounts/:id/permissions
+    if (accessMatch && req.method === "PUT") {
+      const accountId = accessMatch[1];
+      const body = await req.json();
+      const { data: target } = await supabase.from("accounts").select("id,role").eq("id", accountId).single();
+      if (!target) return new Response(JSON.stringify({ message: "Account not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (target.role === "ADMIN") return new Response(JSON.stringify({ message: "Admin permissions are always enabled" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+      const input = body.permissions && typeof body.permissions === "object" ? body.permissions : {};
+      const rows = PERMISSION_KEYS.map((permissionKey) => ({
+        account_id: accountId,
+        permission_key: permissionKey,
+        allowed: input[permissionKey] === true,
+        granted_by: auth.sub,
+        note: String(body.note || "").slice(0, 500) || null,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await supabase.from("account_permissions").upsert(rows, { onConflict: "account_id,permission_key" });
+      if (error) throw error;
+      await supabase.from("accounts").update({ permission_mode: "MANAGED" }).eq("id", accountId);
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: auth.sub, target_account_id: accountId,
+        action: "permissions.updated", details: { permissions: input, note: body.note || null },
+      });
+      return new Response(JSON.stringify({ message: "Permissions updated", permissions: rows }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // POST /accounts/:id/wallet-adjustments
+    const walletMatch = path.match(/^\/accounts\/([^/]+)\/wallet-adjustments$/);
+    if (walletMatch && req.method === "POST") {
+      const accountId = walletMatch[1];
+      const body = await req.json();
+      const amount = Number(body.amount);
+      const direction = body.direction === "debit" ? "debit" : "credit";
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
+        return new Response(JSON.stringify({ message: "Invalid adjustment amount" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: transaction, error } = await supabase.rpc("wallet_post_adjustment", {
+        p_account_id: accountId,
+        p_amount: amount,
+        p_direction: direction,
+        p_transaction_type: direction === "credit" ? "admin_credit" : "admin_debit",
+        p_idempotency_key: `admin:${auth.sub}:${crypto.randomUUID()}`,
+        p_description: String(body.description || "Manual admin adjustment").slice(0, 500),
+        p_created_by: auth.sub,
+        p_reference_type: "admin_adjustment",
+        p_reference_id: null,
+        p_metadata: {},
+      });
+      if (error) throw error;
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: auth.sub, target_account_id: accountId,
+        action: `wallet.${direction}`, details: { amount, transaction_id: transaction?.id },
+      });
+      return new Response(JSON.stringify({ message: "Wallet updated", transaction }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // GET /deposits and PATCH /deposits/:id
+    if (path === "/deposits" && req.method === "GET") {
+      const status = url.searchParams.get("status");
+      let query = supabase.from("deposit_requests").select("*, accounts!deposit_requests_account_id_fkey(name,email)").order("created_at", { ascending: false });
+      if (status) query = query.eq("status", status);
+      const { data, error } = await query.limit(200);
+      if (error) throw error;
+      return new Response(JSON.stringify({ deposits: data || [] }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const depositMatch = path.match(/^\/deposits\/([^/]+)$/);
+    if (depositMatch && req.method === "PATCH") {
+      const body = await req.json();
+      const action = String(body.action || "").toLowerCase();
+      const rpcName = action === "approve" ? "wallet_approve_deposit" : action === "reject" ? "wallet_reject_deposit" : "";
+      if (!rpcName) return new Response(JSON.stringify({ message: "Action must be approve or reject" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const { data, error } = await supabase.rpc(rpcName, {
+        p_deposit_id: depositMatch[1], p_admin_id: auth.sub, p_admin_note: String(body.note || "").slice(0, 500) || null,
+      });
+      if (error) throw error;
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: auth.sub, action: `deposit.${action}`,
+        details: { deposit_id: depositMatch[1], note: body.note || null },
+      });
+      return new Response(JSON.stringify({ message: `Deposit ${action}d`, result: data }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // GET /test-centers — list of all test centers for the picker

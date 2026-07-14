@@ -85,3 +85,19 @@ export async function accessAgencyApi<T = any>(
   if (!res.ok) throw Object.assign(new Error(data?.message || "Request failed"), { status: res.status, data });
   return data as T;
 }
+
+export async function accessWalletApi<T = any>(
+  path: string,
+  opts: { method?: string; body?: any } = {}
+): Promise<T> {
+  const token = getAccessToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const { res, data } = await doFetch(`${getBase()}/access-wallet${path}`, {
+    method: opts.method || (opts.body ? "POST" : "GET"),
+    headers,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!res.ok) throw Object.assign(new Error(data?.message || "Request failed"), { status: res.status, data });
+  return data as T;
+}

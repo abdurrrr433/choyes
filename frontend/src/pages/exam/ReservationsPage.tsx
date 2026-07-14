@@ -324,7 +324,11 @@ export default function ReservationsPage() {
       const { accessToken } = getSession();
       const base = getBackendUrl();
       const response = await fetch(`${base}${getProxyPrefix()}/tickets/${encodeURIComponent(reservationId)}/show-pdf?locale=en`, {
-        method: "GET", headers: { Accept: "*/*", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+        method: "GET", headers: {
+          Accept: "*/*",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(localStorage.getItem("access_token") ? { "X-Access-Token": localStorage.getItem("access_token")! } : {}),
+        },
       });
       if (!response.ok) { throw new Error(await response.text() || "Failed to download ticket PDF"); }
       const contentType = response.headers.get("content-type") || "";

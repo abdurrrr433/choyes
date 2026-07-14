@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Activity, Building2, CircleUserRound, Database, FileSliders,
-  LayoutDashboard, LogOut, Plus, Server, ShieldCheck, Users,
+  LayoutDashboard, LogOut, Plus, Server, ShieldCheck, Users, WalletCards,
 } from "lucide-react";
 import { useAccessAuth } from "@/contexts/AccessAuthContext";
 import { accessAdminApi, accessAgencyApi } from "@/lib/access-api";
@@ -40,10 +40,13 @@ export default function AccessDashboardPage() {
     async function load() {
       setLoading(true); setError("");
       try {
-        const response = isAdmin ? await accessAdminApi<{ accounts: Account[] }>("/accounts") : await accessAgencyApi<{ users: Account[] }>("/users");
-        if (active) setAccounts(isAdmin ? (response as any).accounts || [] : (response as any).users || []);
-      } catch (err: any) {
-        if (active) setError(err?.message || "Could not load dashboard data");
+        const nextAccounts = isAdmin
+          ? (await accessAdminApi<{ accounts: Account[] }>("/accounts")).accounts
+          : (await accessAgencyApi<{ users: Account[] }>("/users")).users;
+        if (active) setAccounts(nextAccounts || []);
+      } catch (error: unknown) {
+        const value = error as { message?: string };
+        if (active) setError(value.message || "Could not load dashboard data");
       } finally { if (active) setLoading(false); }
     }
     if (user) void load();
@@ -80,6 +83,7 @@ export default function AccessDashboardPage() {
           {isAdmin ? <>
             <small>ACCESS CONTROL</small>
             <Link className="ap-nav__link" to="/access/accounts"><Users />All Accounts</Link>
+            <Link className="ap-nav__link" to="/access/finance"><WalletCards />Permissions & Wallets</Link>
             <Link className="ap-nav__link" to="/access/agencies"><Building2 />Create Agency</Link>
             <Link className="ap-nav__link" to="/access/users"><CircleUserRound />Create Users</Link>
             <small>INFRASTRUCTURE</small>
@@ -123,7 +127,7 @@ export default function AccessDashboardPage() {
             {loading ? <p className="ap-muted">Loading live accounts…</p> : accounts.slice(0, 6).map((item) => <div className="ap-row" key={item.id}><span className="ap-row__avatar">{initials(item.name)}</span><div><strong>{item.name}</strong><small>{item.email}</small></div><span className="ap-row__role">{item.role}</span><time>{formatDate(item.created_at)}</time><span className={`ap-status ap-status--${item.status === "ACTIVE" ? "active" : "inactive"}`}>● {item.status}</span></div>)}
             {!loading && !accounts.length && <p className="ap-muted">No accounts found.</p>}
           </article>
-          <aside className="ap-panel ap-quick"><small>SHORTCUTS</small><h2>Quick Actions</h2>{isAdmin && <Link to="/access/agencies"><Building2 />Create Agency</Link>}<Link to="/access/users"><Users />{isAdmin ? "Create User" : "Manage My Users"}</Link><div className="ap-self"><Activity /><div><small>YOUR ACCOUNT</small><strong>{user?.status}</strong><span>{user?.email}</span></div></div></aside>
+          <aside className="ap-panel ap-quick"><small>SHORTCUTS</small><h2>Quick Actions</h2>{isAdmin && <><Link to="/access/agencies"><Building2 />Create Agency</Link><Link to="/access/finance"><WalletCards />Permissions & Wallets</Link></>}<Link to="/access/users"><Users />{isAdmin ? "Create User" : "Manage My Users"}</Link><div className="ap-self"><Activity /><div><small>YOUR ACCOUNT</small><strong>{user?.status}</strong><span>{user?.email}</span></div></div></aside>
         </section>
       </main>
     </div>

@@ -1,1 +1,16 @@
-project_id = "ejuwzinppyazxzfdydkg"
+project_id = "mziyrhutfmtdczggemhe"
+
+[functions.access-auth]
+verify_jwt = false
+
+[functions.access-admin]
+verify_jwt = false
+
+[functions.access-agency]
+verify_jwt = false
+
+[functions.access-wallet]
+verify_jwt = false
+
+[functions.svp-proxy]
+verify_jwt = false

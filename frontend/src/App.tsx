@@ -16,6 +16,10 @@ import PaymentPage from "@/pages/exam/PaymentPage";
 import PaymentResultPage from "@/pages/exam/PaymentResultPage";
 import ReservationsPage from "@/pages/exam/ReservationsPage";
 import AccessLoginPage from "@/pages/access/AccessLoginPage";
+import AccessRegisterPage from "@/pages/access/AccessRegisterPage";
+import AccessForbiddenPage from "@/pages/access/AccessForbiddenPage";
+import AccessFinancePage from "@/pages/access/AccessFinancePage";
+import WalletPage from "@/pages/WalletPage";
 import ForgotPasswordPage from "@/pages/access/ForgotPasswordPage";
 import AccessDashboardPage from "@/pages/access/AccessDashboardPage";
 import AccessAccountsPage from "@/pages/access/AccessAccountsPage";
@@ -44,19 +48,23 @@ const App = () => (
               <Route path="/auth/otp" element={<AccessProtectedRoute allowedRoles={["USER"]}><OtpPage /></AccessProtectedRoute>} />
               <Route path="/auth/register" element={<RegisterPage />} />
               <Route path="/user" element={<Navigate to="/auth/login" replace />} />
-              <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-              <Route path="/exam/booking" element={<ProtectedRoute><BookingPage /></ProtectedRoute>} />
-              <Route path="/exam/payment" element={<ProtectedRoute><PaymentPage /></ProtectedRoute>} />
-              <Route path="/exam/payment/result" element={<ProtectedRoute><PaymentResultPage /></ProtectedRoute>} />
-              <Route path="/exam/reservations" element={<ProtectedRoute><ReservationsPage /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<AccessProtectedRoute allowedRoles={["USER"]}><ProtectedRoute><DashboardPage /></ProtectedRoute></AccessProtectedRoute>} />
+              <Route path="/exam/booking" element={<AccessProtectedRoute allowedRoles={["USER"]} requiredPermission="booking.create"><ProtectedRoute><BookingPage /></ProtectedRoute></AccessProtectedRoute>} />
+              <Route path="/exam/payment" element={<AccessProtectedRoute allowedRoles={["USER"]} requiredPermission="payment.create"><ProtectedRoute><PaymentPage /></ProtectedRoute></AccessProtectedRoute>} />
+              <Route path="/exam/payment/result" element={<AccessProtectedRoute allowedRoles={["USER"]} requiredPermission="payment.create"><ProtectedRoute><PaymentResultPage /></ProtectedRoute></AccessProtectedRoute>} />
+              <Route path="/exam/reservations" element={<AccessProtectedRoute allowedRoles={["USER"]} requiredPermission="reservation.manage"><ProtectedRoute><ReservationsPage /></ProtectedRoute></AccessProtectedRoute>} />
+              <Route path="/wallet" element={<AccessProtectedRoute allowedRoles={["USER"]}><WalletPage /></AccessProtectedRoute>} />
               <Route path="/exam/test-centers/:id" element={<ProtectedRoute><TestCenterDetailPage /></ProtectedRoute>} />
 
               {/* Access Control System */}
               <Route path="/access/login" element={<AccessLoginPage />} />
+              <Route path="/access/register" element={<AccessRegisterPage />} />
               <Route path="/access/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/access/forbidden" element={<AccessProtectedRoute><AccessForbiddenPage /></AccessProtectedRoute>} />
               <Route path="/access/dashboard" element={<AccessProtectedRoute><AccessDashboardPage /></AccessProtectedRoute>} />
               <Route path="/access/accounts" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessAccountsPage /></AccessProtectedRoute>} />
-              <Route path="/access/users" element={<AccessProtectedRoute allowedRoles={["ADMIN", "AGENCY"]}><AccessUsersPage /></AccessProtectedRoute>} />
+              <Route path="/access/users" element={<AccessProtectedRoute allowedRoles={["ADMIN", "AGENCY"]} requiredPermission="users.create"><AccessUsersPage /></AccessProtectedRoute>} />
+              <Route path="/access/finance" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessFinancePage /></AccessProtectedRoute>} />
               <Route path="/access/agencies" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessAgenciesPage /></AccessProtectedRoute>} />
               <Route path="/access/session-centers" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessSessionCentersPage /></AccessProtectedRoute>} />
               <Route path="/access/test-centers" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessTestCentersPage /></AccessProtectedRoute>} />

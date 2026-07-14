@@ -1,14 +1,17 @@
 import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Calendar, Plus } from "lucide-react";
+import { LayoutDashboard, Calendar, Plus, WalletCards } from "lucide-react";
+import { useAccessAuth } from "@/contexts/AccessAuthContext";
 
 const navItems = [
   { to: "/dashboard", label: "Account Dashboard", icon: LayoutDashboard },
   { to: "/exam/reservations", label: "My bookings", icon: Calendar },
   { to: "/exam/booking", label: "New booking", icon: Plus },
+  { to: "/wallet", label: "Wallet & credits", icon: WalletCards },
 ];
 
 export default function Sidebar() {
   const location = useLocation();
+  const { hasPermission } = useAccessAuth();
 
   return (
     <aside className="hidden w-[246px] border-r border-border bg-sidebar p-5 lg:block">
@@ -23,7 +26,11 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="grid gap-2">
-        {navItems.map((item) => {
+        {navItems.filter((item) => {
+          if (item.to === "/exam/booking") return hasPermission("booking.create");
+          if (item.to === "/exam/reservations") return hasPermission("reservation.manage");
+          return true;
+        }).map((item) => {
           const isActive = location.pathname === item.to;
           return (
             <Link

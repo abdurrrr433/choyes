@@ -7,6 +7,7 @@ import {
   saveAccessUser,
   clearAccessUser,
 } from "@/lib/access-api";
+import { resolveAccessPermission } from "@/lib/access-permissions";
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -17,6 +18,9 @@ export interface AccessUser {
   role: "ADMIN" | "AGENCY" | "USER";
   status: string;
   agency_id?: string;
+  permission_mode?: "LEGACY" | "MANAGED";
+  self_registered?: boolean;
+  permissions?: Record<string, boolean>;
 }
 
 interface AccessAuthContextType {
@@ -25,6 +29,7 @@ interface AccessAuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  hasPermission: (permission: string) => boolean;
 }
 
 const AccessAuthContext = createContext<AccessAuthContextType>({
@@ -33,6 +38,7 @@ const AccessAuthContext = createContext<AccessAuthContextType>({
   isAuthenticated: false,
   login: async () => {},
   logout: () => {},
+  hasPermission: () => false,
 });
 
 export function useAccessAuth() {
@@ -124,8 +130,12 @@ export function AccessAuthProvider({ children }: { children: React.ReactNode }) 
     doLogout();
   }, [doLogout]);
 
+  const hasPermission = useCallback((permission: string) => {
+    return resolveAccessPermission(user, permission);
+  }, [user]);
+
   return (
-    <AccessAuthContext.Provider value={{ user, loading, isAuthenticated: !!user, login, logout }}>
+    <AccessAuthContext.Provider value={{ user, loading, isAuthenticated: !!user, login, logout, hasPermission }}>
       {children}
     </AccessAuthContext.Provider>
   );
