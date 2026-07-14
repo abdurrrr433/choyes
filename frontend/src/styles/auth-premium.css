@@ -381,6 +381,137 @@
   text-align: center;
 }
 
+/* ---------- OTP verification ---------- */
+.ap-otp-brand .ap-brand-copy { max-width: 490px; }
+.ap-otp-steps {
+  position: relative;
+  display: grid;
+  gap: 18px;
+  margin-top: 36px;
+}
+.ap-otp-steps::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  top: 36px;
+  bottom: 36px;
+  width: 1px;
+  background: linear-gradient(var(--ap-gold), rgba(255, 255, 255, 0.12));
+}
+.ap-otp-step {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--ap-muted);
+}
+.ap-otp-step > span {
+  flex: 0 0 37px;
+  width: 37px;
+  height: 37px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #111831;
+  font-size: 12px;
+  font-weight: 800;
+}
+.ap-otp-step > div { display: flex; flex-direction: column; gap: 2px; }
+.ap-otp-step strong { color: var(--ap-text); font-size: 13px; }
+.ap-otp-step small { font-size: 12px; line-height: 1.4; }
+.ap-otp-step.is-complete > span {
+  color: #09251d;
+  background: var(--ap-success);
+  border-color: var(--ap-success);
+}
+.ap-otp-step.is-current > span {
+  color: #1a1405;
+  background: var(--ap-gold);
+  border-color: var(--ap-gold);
+  box-shadow: 0 0 0 6px rgba(240, 200, 105, 0.12);
+}
+.ap-otp-card { max-width: 440px; }
+.ap-otp-back {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 24px;
+  color: var(--ap-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.ap-otp-back:hover { color: var(--ap-gold); }
+.ap-otp-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 20px;
+  border-radius: 18px;
+  color: var(--ap-gold);
+  border: 1px solid rgba(240, 200, 105, 0.28);
+  background: rgba(240, 200, 105, 0.09);
+  box-shadow: 0 14px 38px rgba(240, 200, 105, 0.12);
+}
+.ap-otp-header { margin-bottom: 20px; }
+.ap-otp-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+  padding: 13px 14px;
+  border: 1px solid var(--ap-glass-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+.ap-otp-account > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ap-otp-account span { color: var(--ap-muted); font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.ap-otp-account strong { overflow: hidden; color: var(--ap-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ap-otp-account .ap-otp-method {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  color: var(--ap-gold);
+  border: 1px solid rgba(240, 200, 105, 0.2);
+  border-radius: 8px;
+  background: rgba(240, 200, 105, 0.08);
+}
+.ap-otp-field input {
+  min-height: 58px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+.ap-otp-field small { color: var(--ap-muted); font-size: 11.5px; line-height: 1.5; }
+.ap-otp-resend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--ap-gold);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ap-otp-resend:hover:not(:disabled) { color: #fef3c9; }
+.ap-otp-resend:disabled { color: var(--ap-muted); cursor: default; opacity: 0.55; }
+.ap-otp-expired { margin-top: 12px; }
+.is-spinning { animation: ap-spin 0.8s linear infinite; }
+@keyframes ap-spin { to { transform: rotate(360deg); } }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1024px) {
   .ap-brand-panel { padding: 44px 44px 36px; }
@@ -396,6 +527,7 @@
   }
   .ap-brand-copy h2 { font-size: 28px; }
   .ap-brand-features { display: none; }
+  .ap-otp-steps { display: none; }
   .ap-form-panel { padding: 32px 24px 44px; }
   .ap-form-header h1 { font-size: 24px; }
 }
@@ -414,4 +546,8 @@
   .ap-field input,
   .ap-field select,
   .ap-field textarea { min-height: 46px; font-size: 14px; }
+  .ap-otp-back { margin-bottom: 18px; }
+  .ap-otp-icon { width: 50px; height: 50px; margin-bottom: 16px; border-radius: 15px; }
+  .ap-otp-account { align-items: flex-start; }
+  .ap-otp-field input { min-height: 54px; font-size: 19px; }
 }
