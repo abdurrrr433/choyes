@@ -76,6 +76,45 @@ serve(async (req) => {
   }
 
   try {
+    // GET/PUT /billing-settings — global charge for each successful reservation.
+    if (path === "/billing-settings" && req.method === "GET") {
+      const { data, error } = await supabase
+        .from("access_billing_settings")
+        .select("booking_credit_cost,updated_at,updated_by")
+        .eq("singleton", true)
+        .single();
+      if (error) throw error;
+      return new Response(JSON.stringify({ settings: data }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (path === "/billing-settings" && req.method === "PUT") {
+      const body = await req.json();
+      const bookingCreditCost = Number(body.bookingCreditCost);
+      if (!Number.isFinite(bookingCreditCost) || bookingCreditCost < 0 || bookingCreditCost > 1_000_000) {
+        return new Response(JSON.stringify({ message: "Booking credit cost must be between 0 and 1,000,000" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const normalizedCost = Math.round(bookingCreditCost * 100) / 100;
+      const { data, error } = await supabase.from("access_billing_settings").upsert({
+        singleton: true,
+        booking_credit_cost: normalizedCost,
+        updated_by: auth.sub,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "singleton" }).select("booking_credit_cost,updated_at,updated_by").single();
+      if (error) throw error;
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: auth.sub,
+        action: "billing.booking_credit_cost.updated",
+        details: { booking_credit_cost: normalizedCost },
+      });
+      return new Response(JSON.stringify({ message: "Booking credit cost updated", settings: data }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // POST /agencies
     if (path === "/agencies" && req.method === "POST") {
       const { name, email, password, status } = await req.json();

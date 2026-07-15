@@ -6,6 +6,7 @@ import "@/styles/wallet.css";
 
 interface WalletData {
   permissions: Record<string, boolean>;
+  billingSettings?: { booking_credit_cost: number | string };
   wallet: { balance: number | string; currency: string };
   transactions: WalletTransaction[];
   deposits: DepositRequest[];
@@ -59,7 +60,7 @@ export default function WalletPage() {
   }
 
   return <main className="wl-shell"><div className="wl-container">
-    <header className="wl-head"><div><small>CANDIDATE FINANCE</small><h1>Wallet & credit history</h1><p>Credits are deducted only after a reservation is successfully completed.</p></div><nav><Link to="/dashboard">Dashboard</Link><Link to="/exam/reservations">Bookings</Link></nav></header>
+    <header className="wl-head"><div><small>CANDIDATE FINANCE</small><h1>Wallet & credit history</h1><p>A successful reservation currently costs {loading ? "…" : Number(data?.billingSettings?.booking_credit_cost || 0).toFixed(2)} credits, configured by the administrator.</p></div><nav><Link to="/dashboard">Dashboard</Link><Link to="/exam/reservations">Bookings</Link></nav></header>
     {message && <div className="wl-message">{message}</div>}
     <section className="wl-grid">
       <article className="wl-balance"><WalletCards /><span>AVAILABLE BALANCE</span><strong>{loading ? "…" : Number(data?.wallet?.balance || 0).toFixed(2)}</strong><small>{data?.wallet?.currency || "CREDIT"}</small></article>

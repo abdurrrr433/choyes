@@ -68,6 +68,20 @@ async function requireAccessPermission(req: Request, permissionKey: string) {
   return { supabase, account };
 }
 
+async function getBookingCreditCost(supabase: ReturnType<typeof getSupabase>): Promise<number> {
+  const { data, error } = await supabase
+    .from("access_billing_settings")
+    .select("booking_credit_cost")
+    .eq("singleton", true)
+    .single();
+  if (error) throw { statusCode: 500, message: "Could not load booking credit cost", details: error.message };
+  const amount = Number(data?.booking_credit_cost);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw { statusCode: 500, message: "Invalid booking credit cost configuration" };
+  }
+  return amount;
+}
+
 function findReservationId(value: any): string {
   const direct = value?.exam_reservation?.id || value?.reservation?.id || value?.data?.exam_reservation?.id || value?.data?.reservation?.id;
   if (direct !== undefined && direct !== null && direct !== "") return String(direct);
@@ -577,6 +591,7 @@ Deno.serve(async (req) => {
         (req.method === "POST" && /^\/exam-reservations\/[^/]+\/reschedule$/.test(path));
       let accessContext: Awaited<ReturnType<typeof requireAccessPermission>> | null = null;
       let walletHoldId = "";
+      let bookingCreditCost = 0;
 
       if (isReservationManagement) {
         accessContext = await requireAccessPermission(req, "reservation.manage");
@@ -587,30 +602,37 @@ Deno.serve(async (req) => {
       }
 
       if (isBookingCreate && accessContext?.account.permission_mode === "MANAGED") {
-        const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
-        const { data: holdId, error: holdError } = await accessContext.supabase.rpc("wallet_place_booking_hold", {
-          p_account_id: accessContext.account.id,
-          p_amount: 1,
-          p_idempotency_key: `booking-request:${accessContext.account.id}:${requestId}`,
-        });
-        if (holdError) throw { statusCode: 402, message: holdError.message || "Insufficient wallet balance" };
-        walletHoldId = String(holdId || "");
+        bookingCreditCost = await getBookingCreditCost(accessContext.supabase);
+        if (bookingCreditCost > 0) {
+          const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
+          const { data: holdId, error: holdError } = await accessContext.supabase.rpc("wallet_place_booking_hold", {
+            p_account_id: accessContext.account.id,
+            p_amount: bookingCreditCost,
+            p_idempotency_key: `booking-request:${accessContext.account.id}:${requestId}`,
+          });
+          if (holdError) throw { statusCode: 402, message: holdError.message || "Insufficient wallet balance" };
+          walletHoldId = String(holdId || "");
+        }
       }
 
       try {
         const data: any = await svpFetch(buildPath(svpPath, query), { method: route.method, token: svpToken, body });
-        if (isBookingCreate && walletHoldId && accessContext) {
+        if (isBookingCreate && accessContext?.account.permission_mode === "MANAGED") {
           const reservationId = findReservationId(data) || `svp-success:${req.headers.get("x-request-id") || walletHoldId}`;
-          const { data: walletTransaction, error: completeError } = await accessContext.supabase.rpc("wallet_complete_booking_hold", {
-            p_hold_id: walletHoldId,
-            p_reservation_id: reservationId,
-            p_metadata: { source: "svp-proxy", svp_success: true },
-          });
-          if (completeError) {
-            throw { statusCode: 500, message: "Reservation completed but wallet finalization failed", details: { reservationId, reason: completeError.message } };
+          let walletTransaction: any = null;
+          if (walletHoldId) {
+            const { data: completedTransaction, error: completeError } = await accessContext.supabase.rpc("wallet_complete_booking_hold", {
+              p_hold_id: walletHoldId,
+              p_reservation_id: reservationId,
+              p_metadata: { source: "svp-proxy", svp_success: true, configured_credit_cost: bookingCreditCost },
+            });
+            if (completeError) {
+              throw { statusCode: 500, message: "Reservation completed but wallet finalization failed", details: { reservationId, reason: completeError.message } };
+            }
+            walletTransaction = completedTransaction;
           }
           if (data && typeof data === "object" && !Array.isArray(data)) {
-            return json({ ...data, access_wallet: { charged: 1, balance_after: walletTransaction?.balance_after, transaction_id: walletTransaction?.id } });
+            return json({ ...data, access_wallet: { charged: bookingCreditCost, balance_after: walletTransaction?.balance_after, transaction_id: walletTransaction?.id } });
           }
         }
         return json(data);

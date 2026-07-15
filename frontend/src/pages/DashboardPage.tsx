@@ -39,6 +39,7 @@ interface DashboardWalletData {
     self_registered?: boolean;
   };
   permissions: Record<string, boolean>;
+  billingSettings?: { booking_credit_cost: number | string };
   wallet: { balance: number | string; currency: string };
   transactions: DashboardWalletTransaction[];
   deposits: DashboardDepositRequest[];
@@ -342,7 +343,7 @@ export default function DashboardPage() {
           {!walletError && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "14px", marginBottom: "18px" }}>
             <div className="dp-stat dp-stat--green"><span className="dp-stat-label">Current balance</span><strong>{walletLoading ? "…" : Number(walletData?.wallet?.balance || 0).toFixed(2)}</strong><small>{walletData?.wallet?.currency || "CREDIT"}</small></div>
             <div className="dp-stat dp-stat--amber"><span className="dp-stat-label">Deposit requests</span><strong>{walletLoading ? "…" : walletData?.deposits?.length || 0}</strong><small>{walletData?.deposits?.filter((item) => item.status === "PENDING").length || 0} pending</small></div>
-            <div className="dp-stat dp-stat--gold"><span className="dp-stat-label">Ledger entries</span><strong>{walletLoading ? "…" : walletData?.transactions?.length || 0}</strong><small>Latest 100 entries available</small></div>
+            <div className="dp-stat dp-stat--gold"><span className="dp-stat-label">Booking credit cost</span><strong>{walletLoading ? "…" : Number(walletData?.billingSettings?.booking_credit_cost || 0).toFixed(2)}</strong><small>Set manually by administrator</small></div>
           </div>}
 
           <div className="dp-deposit-box">

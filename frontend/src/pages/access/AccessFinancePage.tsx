@@ -6,7 +6,7 @@ import { accessAdminApi } from "@/lib/access-api";
 import "@/styles/access-dashboard-premium.css";
 
 const PERMISSIONS = [
-  ["booking.create", "Create bookings", "Allows candidate reservation creation; completed bookings cost one credit."],
+  ["booking.create", "Create bookings", "Allows candidate reservation creation; successful bookings use the Admin-configured credit cost."],
   ["reservation.manage", "Reservation access", "Allows My bookings access, ticket downloads, cancellation and rescheduling."],
   ["payment.create", "Create payments", "Allows starting or retrying a reservation payment."],
   ["wallet.deposit", "Request deposits", "Allows the user to submit deposit requests for admin approval."],
@@ -54,6 +54,8 @@ export default function AccessFinancePage() {
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
   const [deposits, setDeposits] = useState<DepositRequest[]>([]);
   const [adjustment, setAdjustment] = useState({ amount: "", direction: "credit", description: "" });
+  const [bookingCreditCost, setBookingCreditCost] = useState("1.00");
+  const [savingBookingCost, setSavingBookingCost] = useState(false);
   const [message, setMessage] = useState("");
 
   async function loadAccounts() {
@@ -66,13 +68,17 @@ export default function AccessFinancePage() {
     const response = await accessAdminApi<{ deposits: DepositRequest[] }>("/deposits");
     setDeposits(response.deposits || []);
   }
+  async function loadBillingSettings() {
+    const response = await accessAdminApi<{ settings: { booking_credit_cost: number | string } }>("/billing-settings");
+    setBookingCreditCost(Number(response.settings?.booking_credit_cost || 0).toFixed(2));
+  }
   async function loadDetail(id: string) {
     if (!id) return;
     const response = await accessAdminApi<AccountAccess>(`/accounts/${id}/access`);
     setDetail(response);
     setPermissions(Object.fromEntries(PERMISSIONS.map(([key]) => [key, response.permissions?.find((item) => item.permission_key === key)?.allowed === true])));
   }
-  useEffect(() => { void Promise.all([loadAccounts(), loadDeposits()]).catch((error) => setMessage(error.message)); }, []);
+  useEffect(() => { void Promise.all([loadAccounts(), loadDeposits(), loadBillingSettings()]).catch((error) => setMessage(error.message)); }, []);
   useEffect(() => { void loadDetail(selectedId).catch((error) => setMessage(error.message)); }, [selectedId]);
 
   const selected = useMemo(() => accounts.find((item) => item.id === selectedId), [accounts, selectedId]);
@@ -94,11 +100,23 @@ export default function AccessFinancePage() {
     try { await accessAdminApi(`/deposits/${id}`, { method: "PATCH", body: { action, note } }); setMessage(`Deposit ${action}d.`); await Promise.all([loadDeposits(), selectedId ? loadDetail(selectedId) : Promise.resolve()]); }
     catch (error: unknown) { setMessage(errorMessage(error)); }
   }
+  async function saveBookingCreditCost(event: React.FormEvent) {
+    event.preventDefault(); setMessage(""); setSavingBookingCost(true);
+    try {
+      const response = await accessAdminApi<{ settings: { booking_credit_cost: number | string } }>("/billing-settings", {
+        method: "PUT", body: { bookingCreditCost: Number(bookingCreditCost) },
+      });
+      setBookingCreditCost(Number(response.settings.booking_credit_cost).toFixed(2));
+      setMessage("Per-booking credit cost updated. New successful reservations will use this amount.");
+    } catch (error: unknown) { setMessage(errorMessage(error)); }
+    finally { setSavingBookingCost(false); }
+  }
 
   return <div className="ap-shell"><aside className="ap-sidebar"><div className="ap-brand"><span className="ap-brand__mark">A</span><div><strong>Access</strong><small>ADMIN CONSOLE</small></div></div><nav className="ap-nav"><small>CONTROL</small><Link className="ap-nav__link" to="/access/dashboard"><LayoutDashboard />Dashboard</Link><Link className="ap-nav__link" to="/access/accounts"><Users />Accounts</Link><Link className="ap-nav__link ap-nav__link--active" to="/access/finance"><WalletCards />Permissions & Wallets</Link></nav><div className="ap-sidebar__foot">Secure ledger · v1</div></aside>
     <main className="ap-main"><header className="ap-topbar"><div><small>ACCESS POLICIES</small><strong>Permissions, deposits and credit ledger</strong></div><div className="ap-account"><span className="ap-role ap-role--admin">ADMIN</span><div><strong>{user?.name}</strong><small>{user?.email}</small></div><button onClick={() => { logout(); navigate("/access/login"); }}><LogOut />Logout</button></div></header>
       <section className="af-head"><ShieldCheck /><div><small>SECURITY & FINANCE</small><h1>Account controls</h1><p>Only explicitly enabled capabilities are available to managed accounts.</p></div></section>
       {message && <div className="ap-error af-message">{message}</div>}
+      <section className="ap-panel af-booking-cost"><div><small>RESERVATION BILLING</small><h2>Credit cost per successful booking</h2><p>The amount is held while a reservation is being created, debited only after SVP confirms success, and released automatically if creation fails.</p></div><form onSubmit={saveBookingCreditCost}><label>Credits per booking<input type="number" min="0" max="1000000" step="0.01" value={bookingCreditCost} onChange={(event) => setBookingCreditCost(event.target.value)} required /></label><button className="ap-btn ap-btn--gold" disabled={savingBookingCost}>{savingBookingCost ? "Saving…" : "Save booking cost"}</button></form></section>
       <section className="af-layout"><article className="ap-panel af-control"><label>Account</label><select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>{accounts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.role} · {item.email}</option>)}</select>
         {selected && <div className="af-account"><strong>{selected.name}</strong><span>{selected.role} · {selected.status} · {detail?.account?.permission_mode || selected.permission_mode || "LEGACY"}</span></div>}
         <h2>Page & action permissions</h2><div className="af-permissions">{PERMISSIONS.map(([key, label, note]) => <label key={key} className="af-permission"><input type="checkbox" checked={permissions[key] || false} onChange={(e) => setPermissions({ ...permissions, [key]: e.target.checked })}/><span><strong>{label}</strong><small>{note}</small></span></label>)}</div><button className="ap-btn ap-btn--gold" onClick={savePermissions}>Save permissions</button></article>

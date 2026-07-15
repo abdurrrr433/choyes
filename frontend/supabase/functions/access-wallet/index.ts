@@ -95,12 +95,13 @@ Deno.serve(async (req) => {
     const { supabase, account, permissions } = await requireAccount(req);
 
     if (path === "/me" && req.method === "GET") {
-      const [{ data: wallet }, { data: transactions }, { data: deposits }] = await Promise.all([
+      const [{ data: wallet }, { data: transactions }, { data: deposits }, { data: billingSettings }] = await Promise.all([
         supabase.from("wallets").select("balance,currency,updated_at").eq("account_id", account.id).single(),
         supabase.from("wallet_transactions").select("*").eq("account_id", account.id).order("created_at", { ascending: false }).limit(100),
         supabase.from("deposit_requests").select("*").eq("account_id", account.id).order("created_at", { ascending: false }).limit(50),
+        supabase.from("access_billing_settings").select("booking_credit_cost").eq("singleton", true).single(),
       ]);
-      return json({ account, permissions, wallet: wallet || { balance: 0, currency: "CREDIT" }, transactions: transactions || [], deposits: deposits || [] });
+      return json({ account, permissions, billingSettings: billingSettings || { booking_credit_cost: 1 }, wallet: wallet || { balance: 0, currency: "CREDIT" }, transactions: transactions || [], deposits: deposits || [] });
     }
 
     if (path === "/deposits" && req.method === "POST") {
