@@ -53,7 +53,7 @@ export default function WalletPage() {
     try {
       await accessWalletApi("/deposits", { body: { ...form, amount: Number(form.amount) } });
       setForm({ amount: "", paymentMethod: "", paymentReference: "", note: "" });
-      setMessage("Deposit request submitted for admin review.");
+      setMessage("Deposit request submitted for agency/admin review.");
       await load();
     } catch (error: unknown) { setMessage(errorMessage(error, "Deposit request failed")); }
   }

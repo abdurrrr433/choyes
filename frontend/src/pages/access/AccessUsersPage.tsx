@@ -11,6 +11,31 @@ const AGENCY_USER_PERMISSIONS = [
   ["wallet.deposit", "Request deposits", "Submit wallet deposit requests for admin approval."],
 ] as const;
 
+interface AgencyWalletTransaction {
+  id: string;
+  direction: "credit" | "debit";
+  transaction_type: string;
+  amount: number | string;
+  balance_after: number | string;
+  description?: string | null;
+  created_at: string;
+}
+
+interface AgencyDepositRequest {
+  id: string;
+  amount: number | string;
+  status: string;
+  payment_method: string;
+  payment_reference?: string | null;
+  created_at: string;
+}
+
+interface AgencyWalletData {
+  wallet: { balance: number | string; currency: string };
+  transactions: AgencyWalletTransaction[];
+  deposits: AgencyDepositRequest[];
+}
+
 export default function AccessUsersPage() {
   const { user, logout } = useAccessAuth();
   const navigate = useNavigate();
@@ -44,6 +69,15 @@ export default function AccessUsersPage() {
   const [permissionLoading, setPermissionLoading] = useState(false);
   const [permissionSaving, setPermissionSaving] = useState(false);
   const [permissionMsg, setPermissionMsg] = useState("");
+
+  // Agency-owned user wallet modal
+  const [walletModalId, setWalletModalId] = useState<string | null>(null);
+  const [walletModalName, setWalletModalName] = useState("");
+  const [walletData, setWalletData] = useState<AgencyWalletData | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletSaving, setWalletSaving] = useState(false);
+  const [walletMsg, setWalletMsg] = useState("");
+  const [walletAdjustment, setWalletAdjustment] = useState({ amount: "", direction: "credit", description: "" });
 
   useEffect(() => {
     if (user?.role === "AGENCY") fetchUsers();
@@ -141,6 +175,63 @@ export default function AccessUsersPage() {
       setPermissionMsg(err?.data?.message || err?.message || "Failed to save permissions");
     } finally {
       setPermissionSaving(false);
+    }
+  }
+
+  async function loadUserWallet(accountId: string) {
+    setWalletLoading(true);
+    try {
+      setWalletData(await accessAgencyApi<AgencyWalletData>(`/users/${accountId}/wallet`));
+    } catch (err: any) {
+      setWalletMsg(err?.data?.message || err?.message || "Failed to load wallet");
+    } finally {
+      setWalletLoading(false);
+    }
+  }
+
+  async function openUserWallet(u: any) {
+    setWalletModalId(u.id);
+    setWalletModalName(u.name);
+    setWalletData(null);
+    setWalletMsg("");
+    setWalletAdjustment({ amount: "", direction: "credit", description: "" });
+    await loadUserWallet(u.id);
+  }
+
+  async function submitWalletAdjustment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!walletModalId) return;
+    setWalletSaving(true);
+    setWalletMsg("");
+    try {
+      await accessAgencyApi(`/users/${walletModalId}/wallet-adjustments`, {
+        body: { ...walletAdjustment, amount: Number(walletAdjustment.amount) },
+      });
+      setWalletAdjustment({ amount: "", direction: "credit", description: "" });
+      setWalletMsg(`Balance ${walletAdjustment.direction === "credit" ? "credited" : "debited"} successfully!`);
+      await loadUserWallet(walletModalId);
+    } catch (err: any) {
+      setWalletMsg(err?.data?.message || err?.message || "Wallet adjustment failed");
+    } finally {
+      setWalletSaving(false);
+    }
+  }
+
+  async function processUserDeposit(depositId: string, action: "approve" | "reject") {
+    if (!walletModalId) return;
+    const note = window.prompt(`${action === "approve" ? "Approval" : "Rejection"} note (optional)`) || "";
+    setWalletSaving(true);
+    setWalletMsg("");
+    try {
+      await accessAgencyApi(`/users/${walletModalId}/deposits/${depositId}`, {
+        method: "PATCH", body: { action, note },
+      });
+      setWalletMsg(`Deposit ${action}d successfully!`);
+      await loadUserWallet(walletModalId);
+    } catch (err: any) {
+      setWalletMsg(err?.data?.message || err?.message || "Deposit processing failed");
+    } finally {
+      setWalletSaving(false);
     }
   }
 
@@ -267,6 +358,15 @@ export default function AccessUsersPage() {
                           <td style={tdStyle}>
                             <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                               <button
+                                onClick={() => void openUserWallet(u)}
+                                style={{
+                                  padding: "4px 10px", borderRadius: "6px", border: "1px solid #2e7d32",
+                                  background: "#e8f5e9", color: "#256b29", cursor: "pointer", fontSize: "12px", fontWeight: 700,
+                                }}
+                              >
+                                Wallet
+                              </button>
+                              <button
                                 onClick={() => void openUserPermissions(u)}
                                 style={{
                                   padding: "4px 10px", borderRadius: "6px", border: "1px solid #8a6a13",
@@ -382,6 +482,64 @@ export default function AccessUsersPage() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {walletModalId && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,.58)", display: "flex",
+          alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "16px",
+        }} onClick={() => !walletSaving && setWalletModalId(null)}>
+          <div style={{
+            background: "#fff", borderRadius: "16px", padding: "26px", width: "min(820px,100%)",
+            maxHeight: "92vh", overflowY: "auto", boxShadow: "0 8px 36px rgba(0,0,0,.24)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start", marginBottom: "18px" }}>
+              <div><h3 style={{ margin: "0 0 4px" }}>User Wallet</h3><p style={{ color: "#666", fontSize: "14px", margin: 0 }}><strong>{walletModalName}</strong></p></div>
+              <button type="button" aria-label="Close wallet" onClick={() => setWalletModalId(null)} disabled={walletSaving}
+                style={{ border: 0, background: "#f1f3f5", borderRadius: "8px", width: "34px", height: "34px", cursor: "pointer", fontSize: "18px" }}>×</button>
+            </div>
+
+            {walletLoading && !walletData ? <p>Loading wallet...</p> : <>
+              <div style={{
+                padding: "20px", borderRadius: "14px", color: "#fff", marginBottom: "18px",
+                background: "linear-gradient(135deg,#173b2b,#2e7d32)", display: "flex", justifyContent: "space-between", alignItems: "end",
+              }}><div><small style={{ opacity: .75, letterSpacing: ".1em" }}>AVAILABLE BALANCE</small><strong style={{ display: "block", fontSize: "34px", marginTop: "5px" }}>{Number(walletData?.wallet?.balance || 0).toFixed(2)}</strong></div><b>{walletData?.wallet?.currency || "CREDIT"}</b></div>
+
+              <form onSubmit={submitWalletAdjustment} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: "10px", alignItems: "end", marginBottom: "20px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 700 }}>Amount<input type="number" min="0.01" max="1000000" step="0.01" required value={walletAdjustment.amount}
+                  onChange={(e) => setWalletAdjustment({ ...walletAdjustment, amount: e.target.value })}
+                  style={{ display: "block", width: "100%", boxSizing: "border-box", padding: "9px", marginTop: "5px", border: "1px solid #ccd1d6", borderRadius: "8px" }} /></label>
+                <label style={{ fontSize: "12px", fontWeight: 700 }}>Action<select value={walletAdjustment.direction}
+                  onChange={(e) => setWalletAdjustment({ ...walletAdjustment, direction: e.target.value })}
+                  style={{ display: "block", width: "100%", padding: "9px", marginTop: "5px", border: "1px solid #ccd1d6", borderRadius: "8px" }}><option value="credit">Credit balance</option><option value="debit">Debit balance</option></select></label>
+                <label style={{ fontSize: "12px", fontWeight: 700 }}>Reason<input value={walletAdjustment.description} placeholder="Manual adjustment reason"
+                  onChange={(e) => setWalletAdjustment({ ...walletAdjustment, description: e.target.value })}
+                  style={{ display: "block", width: "100%", boxSizing: "border-box", padding: "9px", marginTop: "5px", border: "1px solid #ccd1d6", borderRadius: "8px" }} /></label>
+                <button disabled={walletSaving} style={{ padding: "10px 16px", borderRadius: "8px", border: 0, background: "#2e7d32", color: "#fff", fontWeight: 700, cursor: "pointer" }}>{walletSaving ? "Saving..." : "Update Balance"}</button>
+              </form>
+
+              {walletMsg && <p style={{ color: /success/i.test(walletMsg) ? "#2e7d32" : "#c62828", fontSize: "14px" }}>{walletMsg}</p>}
+
+              <h4 style={{ margin: "20px 0 10px" }}>Deposit requests</h4>
+              <div style={{ display: "grid", gap: "8px" }}>
+                {walletData?.deposits?.map((item) => <div key={item.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "11px", border: "1px solid #e3e6e9", borderRadius: "9px" }}>
+                  <div><strong>{Number(item.amount).toFixed(2)} CREDIT</strong><small style={{ display: "block", color: "#737b84" }}>{item.payment_method} · {item.payment_reference || "No reference"} · {new Date(item.created_at).toLocaleString()}</small></div>
+                  <div style={{ display: "flex", gap: "7px", alignItems: "center" }}><b style={{ fontSize: "12px" }}>{item.status}</b>{item.status === "PENDING" && <><button type="button" disabled={walletSaving} onClick={() => void processUserDeposit(item.id, "approve")} style={{ border: 0, background: "#e8f5e9", color: "#2e7d32", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontWeight: 700 }}>Approve</button><button type="button" disabled={walletSaving} onClick={() => void processUserDeposit(item.id, "reject")} style={{ border: 0, background: "#ffebee", color: "#c62828", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontWeight: 700 }}>Reject</button></>}</div>
+                </div>)}
+                {!walletData?.deposits?.length && <p style={{ color: "#888" }}>No deposit requests.</p>}
+              </div>
+
+              <h4 style={{ margin: "22px 0 10px" }}>Credit & debit history</h4>
+              <div style={{ display: "grid", gap: "8px" }}>
+                {walletData?.transactions?.map((item) => <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: "14px", alignItems: "center", padding: "11px", borderBottom: "1px solid #e7e9ec" }}>
+                  <div><strong>{item.description || item.transaction_type}</strong><small style={{ display: "block", color: "#737b84" }}>{new Date(item.created_at).toLocaleString()}</small></div>
+                  <b style={{ color: item.direction === "credit" ? "#2e7d32" : "#c62828" }}>{item.direction === "credit" ? "+" : "−"}{Number(item.amount).toFixed(2)}</b><span style={{ color: "#59616a", fontSize: "12px" }}>Balance {Number(item.balance_after).toFixed(2)}</span>
+                </div>)}
+                {!walletData?.transactions?.length && <p style={{ color: "#888" }}>No wallet transactions.</p>}
+              </div>
+            </>}
           </div>
         </div>
       )}

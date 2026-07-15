@@ -8,6 +8,31 @@ import {
 } from "@/lib/payments";
 import "@/styles/dashboard-premium.css";
 import { useAccessAuth } from "@/contexts/AccessAuthContext";
+import { accessWalletApi } from "@/lib/access-api";
+
+interface DashboardWalletTransaction {
+  id: string;
+  direction: "credit" | "debit";
+  transaction_type: string;
+  description?: string | null;
+  amount: number | string;
+  balance_after: number | string;
+  created_at: string;
+}
+
+interface DashboardDepositRequest {
+  id: string;
+  payment_method: string;
+  amount: number | string;
+  status: string;
+  created_at: string;
+}
+
+interface DashboardWalletData {
+  wallet: { balance: number | string; currency: string };
+  transactions: DashboardWalletTransaction[];
+  deposits: DashboardDepositRequest[];
+}
 
 function decodeJwtPayload(token: string) {
   try {
@@ -58,6 +83,9 @@ export default function DashboardPage() {
   const [paymentsSource, setPaymentsSource] = useState<string>("");
   const [paymentsLoading, setPaymentsLoading] = useState(true);
   const [paymentsError, setPaymentsError] = useState("");
+  const [walletData, setWalletData] = useState<DashboardWalletData | null>(null);
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [walletError, setWalletError] = useState("");
 
   useEffect(() => {
     const { accessToken } = getSession();
@@ -66,6 +94,7 @@ export default function DashboardPage() {
     setMe(payload ? { login: payload.login || "User", name: payload.name, role: payload.role } : { login: "User" });
     setLoading(false);
     void loadPayments();
+    void loadWallet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
@@ -81,6 +110,19 @@ export default function DashboardPage() {
       setPaymentsError(err?.message || "Failed to load payment history");
     } finally {
       setPaymentsLoading(false);
+    }
+  }
+
+  async function loadWallet() {
+    setWalletLoading(true);
+    setWalletError("");
+    try {
+      setWalletData(await accessWalletApi<DashboardWalletData>("/me"));
+    } catch (err: any) {
+      setWalletData(null);
+      setWalletError(err?.data?.message || err?.message || "Failed to load wallet");
+    } finally {
+      setWalletLoading(false);
     }
   }
 
@@ -128,6 +170,9 @@ export default function DashboardPage() {
           </Link>}
           <Link className="dp-nav-item" to="/exam/booking" onClick={() => setMenuOpen(false)}>
             <span className="dp-nav-ico">+</span> New booking
+          </Link>
+          <Link className="dp-nav-item" to="/wallet" onClick={() => setMenuOpen(false)}>
+            <span className="dp-nav-ico">¤</span> Wallet & credits
           </Link>
         </nav>
 
@@ -202,6 +247,11 @@ export default function DashboardPage() {
 
         <section className="dp-stats">
           <div className="dp-stat dp-stat--gold">
+            <div className="dp-stat-head"><div className="dp-stat-ico">¤</div></div>
+            <span className="dp-stat-label">Available credits</span>
+            <strong>{walletLoading ? "…" : Number(walletData?.wallet?.balance || 0).toFixed(2)}</strong>
+          </div>
+          <div className="dp-stat dp-stat--gold">
             <div className="dp-stat-head">
               <div className="dp-stat-ico">◈</div>
             </div>
@@ -229,6 +279,31 @@ export default function DashboardPage() {
             <span className="dp-stat-label">Pending</span>
             <strong>{paymentsLoading ? "…" : summary.pending}</strong>
           </div>
+        </section>
+
+        <section className="dp-panel">
+          <div className="dp-panel-head">
+            <div><h2>Wallet & credit history</h2><span className="dp-sub">Your live balance, deposits, manual credits and booking debits.</span></div>
+            <div style={{ display: "flex", gap: "10px" }}><button className="dp-btn" type="button" onClick={loadWallet} disabled={walletLoading}>{walletLoading ? "Refreshing…" : "↻ Refresh"}</button><Link className="dp-btn" to="/wallet">Open wallet →</Link></div>
+          </div>
+          {walletError && <div className="dp-error">{walletError}</div>}
+          {!walletError && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "14px", marginBottom: "18px" }}>
+            <div className="dp-stat dp-stat--green"><span className="dp-stat-label">Current balance</span><strong>{walletLoading ? "…" : Number(walletData?.wallet?.balance || 0).toFixed(2)}</strong><small>{walletData?.wallet?.currency || "CREDIT"}</small></div>
+            <div className="dp-stat dp-stat--amber"><span className="dp-stat-label">Deposit requests</span><strong>{walletLoading ? "…" : walletData?.deposits?.length || 0}</strong><small>{walletData?.deposits?.filter((item) => item.status === "PENDING").length || 0} pending</small></div>
+            <div className="dp-stat dp-stat--gold"><span className="dp-stat-label">Ledger entries</span><strong>{walletLoading ? "…" : walletData?.transactions?.length || 0}</strong><small>Latest 100 entries available</small></div>
+          </div>}
+
+          <h3 style={{ margin: "0 0 10px", fontSize: "15px" }}>Recent credit & debit history</h3>
+          <div className="dp-table-wrap"><table className="dp-table"><thead><tr><th>Description</th><th>Date</th><th>Type</th><th>Amount</th><th>Balance</th></tr></thead><tbody>
+            {walletData?.transactions?.slice(0, 8).map((item) => <tr key={item.id}><td>{item.description || item.transaction_type}</td><td>{formatTimestamp(item.created_at)}</td><td><span className={`dp-badge dp-badge--${item.direction === "credit" ? "success" : "failed"}`}>{item.direction}</span></td><td style={{ color: item.direction === "credit" ? "var(--dp-green)" : "var(--dp-red)", fontWeight: 800 }}>{item.direction === "credit" ? "+" : "−"}{Number(item.amount).toFixed(2)}</td><td>{Number(item.balance_after).toFixed(2)}</td></tr>)}
+            {!walletLoading && !walletData?.transactions?.length && <tr><td colSpan={5}>No credit or debit history yet.</td></tr>}
+          </tbody></table></div>
+
+          <h3 style={{ margin: "20px 0 10px", fontSize: "15px" }}>Recent deposits</h3>
+          <div className="dp-table-wrap"><table className="dp-table"><thead><tr><th>Method</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+            {walletData?.deposits?.slice(0, 5).map((item) => <tr key={item.id}><td>{item.payment_method}</td><td>{formatTimestamp(item.created_at)}</td><td>{Number(item.amount).toFixed(2)}</td><td><span className={`dp-badge dp-badge--${item.status === "APPROVED" ? "success" : item.status === "REJECTED" ? "failed" : "pending"}`}>{item.status}</span></td></tr>)}
+            {!walletLoading && !walletData?.deposits?.length && <tr><td colSpan={4}>No deposit requests yet.</td></tr>}
+          </tbody></table></div>
         </section>
 
         <section className="dp-panel">

@@ -190,6 +190,125 @@ serve(async (req) => {
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // GET /users/:id/wallet — child balance, immutable ledger and deposits.
+    const walletMatch = path.match(/^\/users\/([^/]+)\/wallet$/);
+    if (walletMatch && req.method === "GET") {
+      const accountId = walletMatch[1];
+      const { data: target } = await supabase.from("accounts")
+        .select("id,name,email,role,status,agency_id")
+        .eq("id", accountId).eq("role", "USER").eq("agency_id", auth.sub).single();
+      if (!target) {
+        return new Response(JSON.stringify({ message: "User not found under this agency" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const [walletResult, transactionResult, depositResult] = await Promise.all([
+        supabase.from("wallets").select("balance,currency,updated_at").eq("account_id", accountId).single(),
+        supabase.from("wallet_transactions").select("*").eq("account_id", accountId).order("created_at", { ascending: false }).limit(100),
+        supabase.from("deposit_requests").select("*").eq("account_id", accountId).order("created_at", { ascending: false }).limit(50),
+      ]);
+      if (transactionResult.error) throw transactionResult.error;
+      if (depositResult.error) throw depositResult.error;
+      return new Response(JSON.stringify({
+        user: publicAccount(target),
+        wallet: walletResult.data || { balance: 0, currency: "CREDIT" },
+        transactions: transactionResult.data || [],
+        deposits: depositResult.data || [],
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // POST /users/:id/wallet-adjustments — manual credit/debit for an owned child only.
+    const walletAdjustmentMatch = path.match(/^\/users\/([^/]+)\/wallet-adjustments$/);
+    if (walletAdjustmentMatch && req.method === "POST") {
+      const accountId = walletAdjustmentMatch[1];
+      const { data: target } = await supabase.from("accounts")
+        .select("id,role,agency_id")
+        .eq("id", accountId).eq("role", "USER").eq("agency_id", auth.sub).single();
+      if (!target) {
+        return new Response(JSON.stringify({ message: "User not found under this agency" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const body = await req.json();
+      const amount = Number(body.amount);
+      const direction = body.direction === "debit" ? "debit" : "credit";
+      const description = String(body.description || "Agency manual wallet adjustment").trim().slice(0, 500);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
+        return new Response(JSON.stringify({ message: "Amount must be between 0.01 and 1,000,000" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const requestId = crypto.randomUUID();
+      const { data: transaction, error } = await supabase.rpc("wallet_post_adjustment", {
+        p_account_id: accountId,
+        p_amount: amount,
+        p_direction: direction,
+        p_transaction_type: direction === "credit" ? "agency_credit" : "agency_debit",
+        p_idempotency_key: `agency:${auth.sub}:${requestId}`,
+        p_description: description,
+        p_created_by: auth.sub,
+        p_reference_type: "agency_adjustment",
+        p_reference_id: requestId,
+        p_metadata: { actor_role: "AGENCY", agency_id: auth.sub },
+      });
+      if (error) {
+        const message = error.message?.includes("insufficient wallet balance")
+          ? "Insufficient user balance for this debit" : error.message;
+        return new Response(JSON.stringify({ message: message || "Wallet adjustment failed" }), {
+          status: error.message?.includes("insufficient wallet balance") ? 409 : 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: auth.sub, target_account_id: accountId,
+        action: `agency.wallet.${direction}`,
+        details: { amount, transaction_id: transaction?.id, description },
+      });
+      return new Response(JSON.stringify({ message: "User wallet updated", transaction }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // PATCH /users/:id/deposits/:depositId — approve/reject this child's request.
+    const childDepositMatch = path.match(/^\/users\/([^/]+)\/deposits\/([^/]+)$/);
+    if (childDepositMatch && req.method === "PATCH") {
+      const accountId = childDepositMatch[1];
+      const depositId = childDepositMatch[2];
+      const [{ data: target }, { data: deposit }] = await Promise.all([
+        supabase.from("accounts").select("id").eq("id", accountId).eq("role", "USER").eq("agency_id", auth.sub).single(),
+        supabase.from("deposit_requests").select("id,account_id,status").eq("id", depositId).eq("account_id", accountId).single(),
+      ]);
+      if (!target || !deposit) {
+        return new Response(JSON.stringify({ message: "Deposit not found under this agency user" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const body = await req.json();
+      const action = String(body.action || "").toLowerCase();
+      const rpcName = action === "approve" ? "wallet_approve_deposit" : action === "reject" ? "wallet_reject_deposit" : "";
+      if (!rpcName) {
+        return new Response(JSON.stringify({ message: "Action must be approve or reject" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const note = String(body.note || "").slice(0, 500) || null;
+      const { data: result, error } = await supabase.rpc(rpcName, {
+        p_deposit_id: depositId, p_admin_id: auth.sub, p_admin_note: note,
+      });
+      if (error) {
+        return new Response(JSON.stringify({ message: error.message || "Deposit processing failed" }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: auth.sub, target_account_id: accountId,
+        action: `agency.deposit.${action}`, details: { deposit_id: depositId, note },
+      });
+      return new Response(JSON.stringify({ message: `Deposit ${action}d`, result }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // PATCH /users/:id/status
     const statusMatch = path.match(/^\/users\/([^/]+)\/status$/);
     if (statusMatch && req.method === "PATCH") {
