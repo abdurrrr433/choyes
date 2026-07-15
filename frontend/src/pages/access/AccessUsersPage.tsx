@@ -27,6 +27,8 @@ interface AgencyDepositRequest {
   status: string;
   payment_method: string;
   payment_reference?: string | null;
+  receiver_account?: string | null;
+  billing_owner_id?: string | null;
   created_at: string;
 }
 
@@ -34,6 +36,15 @@ interface AgencyWalletData {
   wallet: { balance: number | string; currency: string };
   transactions: AgencyWalletTransaction[];
   deposits: AgencyDepositRequest[];
+}
+interface AgencyBillingSettings {
+  booking_credit_cost: number | string;
+  bkash_enabled: boolean;
+  bkash_number?: string | null;
+  bkash_instructions?: string | null;
+  nagad_enabled: boolean;
+  nagad_number?: string | null;
+  nagad_instructions?: string | null;
 }
 
 export default function AccessUsersPage() {
@@ -78,10 +89,41 @@ export default function AccessUsersPage() {
   const [walletSaving, setWalletSaving] = useState(false);
   const [walletMsg, setWalletMsg] = useState("");
   const [walletAdjustment, setWalletAdjustment] = useState({ amount: "", direction: "credit", description: "" });
+  const [billingSource, setBillingSource] = useState("ADMIN_DEFAULT");
+  const [billingSaving, setBillingSaving] = useState(false);
+  const [billing, setBilling] = useState({ bookingCreditCost: "1.00", bkashEnabled: false, bkashNumber: "", bkashInstructions: "", nagadEnabled: false, nagadNumber: "", nagadInstructions: "" });
 
   useEffect(() => {
-    if (user?.role === "AGENCY") fetchUsers();
+    if (user?.role === "AGENCY") { fetchUsers(); void loadAgencyBilling(); }
   }, [user]);
+
+  async function loadAgencyBilling() {
+    try {
+      const response = await accessAgencyApi<{ settings: AgencyBillingSettings; source: string }>("/billing-settings");
+      const item = response.settings;
+      setBillingSource(response.source || "ADMIN_DEFAULT");
+      setBilling({
+        bookingCreditCost: Number(item?.booking_credit_cost || 0).toFixed(2),
+        bkashEnabled: item?.bkash_enabled === true,
+        bkashNumber: item?.bkash_number || "",
+        bkashInstructions: item?.bkash_instructions || "",
+        nagadEnabled: item?.nagad_enabled === true,
+        nagadNumber: item?.nagad_number || "",
+        nagadInstructions: item?.nagad_instructions || "",
+      });
+    } catch (err: any) { setMsg(err?.data?.message || err?.message || "Failed to load billing settings"); }
+  }
+
+  async function saveAgencyBilling(event: React.FormEvent) {
+    event.preventDefault(); setBillingSaving(true); setMsg("");
+    try {
+      await accessAgencyApi("/billing-settings", { method: "PUT", body: { ...billing, bookingCreditCost: Number(billing.bookingCreditCost) } });
+      setBillingSource("AGENCY");
+      setMsg("Agency billing and payment receivers saved successfully!");
+      await loadAgencyBilling();
+    } catch (err: any) { setMsg(err?.data?.message || err?.message || "Failed to save billing settings"); }
+    finally { setBillingSaving(false); }
+  }
 
   async function fetchUsers() {
     setListLoading(true);
@@ -269,6 +311,22 @@ export default function AccessUsersPage() {
 
         <section style={{ padding: "24px 40px" }}>
           <h1 style={{ margin: "0 0 20px" }}>{isAdmin ? "Create User" : "Manage Your Users"}</h1>
+
+          {!isAdmin && <div className="booking-card" style={{ marginBottom: "24px" }}>
+            <small style={{ color: "#f0c869", letterSpacing: ".14em" }}>AGENCY BILLING · {billingSource}</small>
+            <h2 style={{ margin: "8px 0" }}>Your users' booking cost & payment receivers</h2>
+            <p style={{ color: "#9199b8" }}>Only users belonging to your Agency use this profile. You cannot change Admin defaults or another Agency's billing.</p>
+            <form onSubmit={saveAgencyBilling} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: "12px", marginTop: "18px" }}>
+              <label>Credits per successful booking<input type="number" min="0" max="1000000" step="0.01" required value={billing.bookingCreditCost} onChange={(event) => setBilling({ ...billing, bookingCreditCost: event.target.value })} /></label>
+              <label style={{ display: "flex", alignItems: "center", gap: "9px" }}><input style={{ width: "18px", minHeight: "18px" }} type="checkbox" checked={billing.bkashEnabled} onChange={(event) => setBilling({ ...billing, bkashEnabled: event.target.checked })} /> Enable bKash</label>
+              <label>bKash receiver number<input required={billing.bkashEnabled} value={billing.bkashNumber} onChange={(event) => setBilling({ ...billing, bkashNumber: event.target.value })} /></label>
+              <label>bKash instructions<input maxLength={500} placeholder="Send Money and enter transaction ID" value={billing.bkashInstructions} onChange={(event) => setBilling({ ...billing, bkashInstructions: event.target.value })} /></label>
+              <label style={{ display: "flex", alignItems: "center", gap: "9px" }}><input style={{ width: "18px", minHeight: "18px" }} type="checkbox" checked={billing.nagadEnabled} onChange={(event) => setBilling({ ...billing, nagadEnabled: event.target.checked })} /> Enable Nagad</label>
+              <label>Nagad receiver number<input required={billing.nagadEnabled} value={billing.nagadNumber} onChange={(event) => setBilling({ ...billing, nagadNumber: event.target.value })} /></label>
+              <label>Nagad instructions<input maxLength={500} placeholder="Send Money and enter transaction ID" value={billing.nagadInstructions} onChange={(event) => setBilling({ ...billing, nagadInstructions: event.target.value })} /></label>
+              <button type="submit" className="auth-submit" disabled={billingSaving}>{billingSaving ? "Saving..." : "Save Agency Billing"}</button>
+            </form>
+          </div>}
 
           <div className="booking-card" style={{ marginBottom: "24px" }}>
             <form onSubmit={submit} style={{ display: "grid", gap: "14px", maxWidth: "500px" }}>
@@ -525,8 +583,8 @@ export default function AccessUsersPage() {
               <h4 style={{ margin: "20px 0 10px" }}>Deposit requests</h4>
               <div style={{ display: "grid", gap: "8px" }}>
                 {walletData?.deposits?.map((item) => <div key={item.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "11px", border: "1px solid #e3e6e9", borderRadius: "9px" }}>
-                  <div><strong>{Number(item.amount).toFixed(2)} CREDIT</strong><small style={{ display: "block", color: "#737b84" }}>{item.payment_method} · {item.payment_reference || "No reference"} · {new Date(item.created_at).toLocaleString()}</small></div>
-                  <div style={{ display: "flex", gap: "7px", alignItems: "center" }}><b style={{ fontSize: "12px" }}>{item.status}</b>{item.status === "PENDING" && <><button type="button" disabled={walletSaving} onClick={() => void processUserDeposit(item.id, "approve")} style={{ border: 0, background: "#e8f5e9", color: "#2e7d32", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontWeight: 700 }}>Approve</button><button type="button" disabled={walletSaving} onClick={() => void processUserDeposit(item.id, "reject")} style={{ border: 0, background: "#ffebee", color: "#c62828", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontWeight: 700 }}>Reject</button></>}</div>
+                  <div><strong>{Number(item.amount).toFixed(2)} CREDIT</strong><small style={{ display: "block", color: "#737b84" }}>{item.payment_method} to {item.receiver_account || "configured receiver"} · Txn {item.payment_reference || "No reference"} · {new Date(item.created_at).toLocaleString()}</small></div>
+                  <div style={{ display: "flex", gap: "7px", alignItems: "center" }}><b style={{ fontSize: "12px" }}>{item.status}</b>{item.status === "PENDING" && item.billing_owner_id === user?.id && <><button type="button" disabled={walletSaving} onClick={() => void processUserDeposit(item.id, "approve")} style={{ border: 0, background: "#e8f5e9", color: "#2e7d32", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontWeight: 700 }}>Approve</button><button type="button" disabled={walletSaving} onClick={() => void processUserDeposit(item.id, "reject")} style={{ border: 0, background: "#ffebee", color: "#c62828", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontWeight: 700 }}>Reject</button></>}</div>
                 </div>)}
                 {!walletData?.deposits?.length && <p style={{ color: "#888" }}>No deposit requests.</p>}
               </div>

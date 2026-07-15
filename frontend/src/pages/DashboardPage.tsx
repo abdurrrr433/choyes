@@ -39,7 +39,11 @@ interface DashboardWalletData {
     self_registered?: boolean;
   };
   permissions: Record<string, boolean>;
-  billingSettings?: { booking_credit_cost: number | string };
+  billingSettings?: {
+    booking_credit_cost: number | string;
+    source?: string;
+    payment_methods?: Array<{ code: string; label: string; receiver_account: string; instructions?: string | null }>;
+  };
   wallet: { balance: number | string; currency: string };
   transactions: DashboardWalletTransaction[];
   deposits: DashboardDepositRequest[];
@@ -182,6 +186,7 @@ export default function DashboardPage() {
 
   const summary = summarizePayments(payments);
   const account = walletData?.account || accessUser;
+  const selectedDepositMethod = walletData?.billingSettings?.payment_methods?.find((item) => item.code === depositForm.paymentMethod);
   const displayName = account?.name || me?.name || me?.login || "User";
   const initials = useMemo(() => initialsFrom(displayName), [displayName]);
 
@@ -343,7 +348,7 @@ export default function DashboardPage() {
           {!walletError && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "14px", marginBottom: "18px" }}>
             <div className="dp-stat dp-stat--green"><span className="dp-stat-label">Current balance</span><strong>{walletLoading ? "…" : Number(walletData?.wallet?.balance || 0).toFixed(2)}</strong><small>{walletData?.wallet?.currency || "CREDIT"}</small></div>
             <div className="dp-stat dp-stat--amber"><span className="dp-stat-label">Deposit requests</span><strong>{walletLoading ? "…" : walletData?.deposits?.length || 0}</strong><small>{walletData?.deposits?.filter((item) => item.status === "PENDING").length || 0} pending</small></div>
-            <div className="dp-stat dp-stat--gold"><span className="dp-stat-label">Booking credit cost</span><strong>{walletLoading ? "…" : Number(walletData?.billingSettings?.booking_credit_cost || 0).toFixed(2)}</strong><small>Set manually by administrator</small></div>
+            <div className="dp-stat dp-stat--gold"><span className="dp-stat-label">Booking credit cost</span><strong>{walletLoading ? "…" : Number(walletData?.billingSettings?.booking_credit_cost || 0).toFixed(2)}</strong><small>Set by {walletData?.billingSettings?.source === "AGENCY" ? "your Agency" : "administrator"}</small></div>
           </div>}
 
           <div className="dp-deposit-box">
@@ -357,10 +362,11 @@ export default function DashboardPage() {
             ) : walletData?.permissions?.["wallet.deposit"] ? (
               <form className="dp-deposit-form" onSubmit={submitDeposit}>
                 <label><span>Amount *</span><input type="number" min="0.01" max="1000000" step="0.01" placeholder="0.00" value={depositForm.amount} onChange={(event) => setDepositForm({ ...depositForm, amount: event.target.value })} required /></label>
-                <label><span>Payment method *</span><input maxLength={80} placeholder="Bank, bKash, cash…" value={depositForm.paymentMethod} onChange={(event) => setDepositForm({ ...depositForm, paymentMethod: event.target.value })} required /></label>
+                <label><span>Payment method *</span><select value={depositForm.paymentMethod} onChange={(event) => setDepositForm({ ...depositForm, paymentMethod: event.target.value })} required><option value="">Select payment method</option>{walletData?.billingSettings?.payment_methods?.map((method) => <option key={method.code} value={method.code}>{method.label} · {method.receiver_account}</option>)}</select></label>
                 <label><span>Payment reference</span><input maxLength={160} placeholder="Transaction/reference ID" value={depositForm.paymentReference} onChange={(event) => setDepositForm({ ...depositForm, paymentReference: event.target.value })} /></label>
                 <label><span>Note</span><input maxLength={500} placeholder="Optional note" value={depositForm.note} onChange={(event) => setDepositForm({ ...depositForm, note: event.target.value })} /></label>
                 <button className="dp-btn dp-btn--primary" type="submit" disabled={depositSubmitting || walletLoading}>{depositSubmitting ? "Submitting…" : "Submit deposit request"}</button>
+                {selectedDepositMethod && <div className="dp-permission-note" style={{ gridColumn: "1 / -1" }}>Send payment to <strong>{selectedDepositMethod.label} {selectedDepositMethod.receiver_account}</strong>. {selectedDepositMethod.instructions || "Enter the transaction ID as your payment reference."}</div>}
               </form>
             ) : (
               <div className="dp-permission-note">Deposit requests are not enabled for this account. Contact your agency or administrator to enable the wallet deposit permission.</div>

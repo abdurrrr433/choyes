@@ -54,6 +54,25 @@ function effectiveUserPermissions(mode: string, rows: Array<{ permission_key: st
   return permissions;
 }
 
+function paymentSettings(body: any) {
+  const bkashEnabled = body.bkashEnabled === true;
+  const nagadEnabled = body.nagadEnabled === true;
+  const bkashNumber = String(body.bkashNumber || "").trim();
+  const nagadNumber = String(body.nagadNumber || "").trim();
+  const validReceiver = (value: string) => /^[0-9+ -]{6,30}$/.test(value);
+  if ((bkashEnabled && !validReceiver(bkashNumber)) || (nagadEnabled && !validReceiver(nagadNumber))) {
+    throw { statusCode: 400, message: "Each enabled payment method requires a valid receiver number" };
+  }
+  return {
+    bkash_enabled: bkashEnabled,
+    bkash_number: bkashNumber || null,
+    bkash_instructions: String(body.bkashInstructions || "").trim().slice(0, 500) || null,
+    nagad_enabled: nagadEnabled,
+    nagad_number: nagadNumber || null,
+    nagad_instructions: String(body.nagadInstructions || "").trim().slice(0, 500) || null,
+  };
+}
+
 async function getAuth(req: Request) {
   const authHeader = req.headers.get("authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -91,6 +110,59 @@ serve(async (req) => {
   }
 
   try {
+    // GET/PUT /billing-settings — this agency's own profile only.
+    if (path === "/billing-settings" && req.method === "GET") {
+      const { data: agencySettings, error } = await supabase.from("agency_billing_settings")
+        .select("booking_credit_cost,bkash_enabled,bkash_number,bkash_instructions,nagad_enabled,nagad_number,nagad_instructions,updated_at")
+        .eq("agency_id", auth.sub).maybeSingle();
+      if (error) throw error;
+      if (agencySettings) {
+        return new Response(JSON.stringify({ settings: agencySettings, source: "AGENCY" }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: defaults, error: defaultError } = await supabase.from("access_billing_settings")
+        .select("booking_credit_cost,bkash_enabled,bkash_number,bkash_instructions,nagad_enabled,nagad_number,nagad_instructions,updated_at")
+        .eq("singleton", true).single();
+      if (defaultError) throw defaultError;
+      return new Response(JSON.stringify({ settings: defaults, source: "ADMIN_DEFAULT" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (path === "/billing-settings" && req.method === "PUT") {
+      const body = await req.json();
+      const bookingCreditCost = Number(body.bookingCreditCost);
+      if (!Number.isFinite(bookingCreditCost) || bookingCreditCost < 0 || bookingCreditCost > 1_000_000) {
+        return new Response(JSON.stringify({ message: "Booking credit cost must be between 0 and 1,000,000" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      let methods;
+      try { methods = paymentSettings(body); }
+      catch (error: any) {
+        return new Response(JSON.stringify({ message: error.message }), {
+          status: error.statusCode || 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const normalizedCost = Math.round(bookingCreditCost * 100) / 100;
+      const { data, error } = await supabase.from("agency_billing_settings").upsert({
+        agency_id: auth.sub,
+        booking_credit_cost: normalizedCost,
+        ...methods,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "agency_id" }).select("booking_credit_cost,bkash_enabled,bkash_number,bkash_instructions,nagad_enabled,nagad_number,nagad_instructions,updated_at").single();
+      if (error) throw error;
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: auth.sub, target_account_id: auth.sub,
+        action: "agency.billing.updated",
+        details: { booking_credit_cost: normalizedCost, bkash_enabled: methods.bkash_enabled, nagad_enabled: methods.nagad_enabled },
+      });
+      return new Response(JSON.stringify({ message: "Agency billing settings updated", settings: data, source: "AGENCY" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // POST /users
     if (path === "/users" && req.method === "POST") {
       const { data: userCreatePermission } = await supabase.from("account_permissions")
@@ -276,11 +348,16 @@ serve(async (req) => {
       const depositId = childDepositMatch[2];
       const [{ data: target }, { data: deposit }] = await Promise.all([
         supabase.from("accounts").select("id").eq("id", accountId).eq("role", "USER").eq("agency_id", auth.sub).single(),
-        supabase.from("deposit_requests").select("id,account_id,status").eq("id", depositId).eq("account_id", accountId).single(),
+        supabase.from("deposit_requests").select("id,account_id,status,billing_owner_id").eq("id", depositId).eq("account_id", accountId).single(),
       ]);
       if (!target || !deposit) {
         return new Response(JSON.stringify({ message: "Deposit not found under this agency user" }), {
           status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (deposit.billing_owner_id !== auth.sub) {
+        return new Response(JSON.stringify({ message: "Only the payment receiver owner can process this deposit" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const body = await req.json();

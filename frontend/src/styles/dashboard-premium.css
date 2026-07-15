@@ -389,12 +389,12 @@
 .dp-deposit-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
 .dp-deposit-form label { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .dp-deposit-form label span { color: var(--dp-muted); font-size: 11px; font-weight: 700; }
-.dp-deposit-form input {
+.dp-deposit-form input, .dp-deposit-form select {
   width: 100%; min-width: 0; padding: 11px 12px; border-radius: 10px;
   color: var(--dp-text); background: rgba(7, 11, 26, 0.62);
   border: 1px solid var(--dp-glass-border); outline: none;
 }
-.dp-deposit-form input:focus { border-color: rgba(240, 200, 105, 0.62); box-shadow: 0 0 0 3px rgba(240, 200, 105, 0.08); }
+.dp-deposit-form input:focus, .dp-deposit-form select:focus { border-color: rgba(240, 200, 105, 0.62); box-shadow: 0 0 0 3px rgba(240, 200, 105, 0.08); }
 .dp-deposit-form .dp-btn { grid-column: 1 / -1; justify-content: center; }
 .dp-permission-note {
   align-self: center; padding: 14px 16px; border-radius: 12px; color: var(--dp-amber);

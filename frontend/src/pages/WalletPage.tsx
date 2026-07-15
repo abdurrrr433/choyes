@@ -6,7 +6,11 @@ import "@/styles/wallet.css";
 
 interface WalletData {
   permissions: Record<string, boolean>;
-  billingSettings?: { booking_credit_cost: number | string };
+  billingSettings?: {
+    booking_credit_cost: number | string;
+    source?: string;
+    payment_methods?: Array<{ code: string; label: string; receiver_account: string; instructions?: string | null }>;
+  };
   wallet: { balance: number | string; currency: string };
   transactions: WalletTransaction[];
   deposits: DepositRequest[];
@@ -48,6 +52,7 @@ export default function WalletPage() {
     finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
+  const selectedMethod = data?.billingSettings?.payment_methods?.find((item) => item.code === form.paymentMethod);
 
   async function submitDeposit(event: React.FormEvent) {
     event.preventDefault(); setMessage("");
@@ -60,17 +65,18 @@ export default function WalletPage() {
   }
 
   return <main className="wl-shell"><div className="wl-container">
-    <header className="wl-head"><div><small>CANDIDATE FINANCE</small><h1>Wallet & credit history</h1><p>A successful reservation currently costs {loading ? "…" : Number(data?.billingSettings?.booking_credit_cost || 0).toFixed(2)} credits, configured by the administrator.</p></div><nav><Link to="/dashboard">Dashboard</Link><Link to="/exam/reservations">Bookings</Link></nav></header>
+    <header className="wl-head"><div><small>CANDIDATE FINANCE</small><h1>Wallet & credit history</h1><p>A successful reservation currently costs {loading ? "…" : Number(data?.billingSettings?.booking_credit_cost || 0).toFixed(2)} credits, configured by your {data?.billingSettings?.source === "AGENCY" ? "Agency" : "administrator"}.</p></div><nav><Link to="/dashboard">Dashboard</Link><Link to="/exam/reservations">Bookings</Link></nav></header>
     {message && <div className="wl-message">{message}</div>}
     <section className="wl-grid">
       <article className="wl-balance"><WalletCards /><span>AVAILABLE BALANCE</span><strong>{loading ? "…" : Number(data?.wallet?.balance || 0).toFixed(2)}</strong><small>{data?.wallet?.currency || "CREDIT"}</small></article>
       <article className="wl-card"><h2>Request deposit</h2>{data?.permissions?.["wallet.deposit"] ? <form onSubmit={submitDeposit}>
         <input type="number" min="0.01" step="0.01" placeholder="Amount" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required />
-        <input placeholder="Payment method" value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })} required />
+        <select style={{ width: "100%", padding: "11px 13px", border: "1px solid #36416c", borderRadius: "9px", background: "#0d132a", color: "white" }} value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })} required><option value="">Select payment method</option>{data?.billingSettings?.payment_methods?.map((method) => <option key={method.code} value={method.code}>{method.label} · {method.receiver_account}</option>)}</select>
         <input placeholder="Payment reference" value={form.paymentReference} onChange={(e) => setForm({ ...form, paymentReference: e.target.value })} />
         <textarea placeholder="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
         <button>Submit for approval</button>
-      </form> : <p className="wl-muted">Deposit permission has not been enabled for this account.</p>}</article>
+        {selectedMethod && <p className="wl-muted" style={{ gridColumn: "1 / -1", margin: 0 }}>Send payment to <strong style={{ color: "#f0c869" }}>{selectedMethod.label} {selectedMethod.receiver_account}</strong>. {selectedMethod.instructions || "Enter the transaction ID as payment reference."}</p>}
+      </form> : <p className="wl-muted">Deposit permission has not been enabled for this account.</p>}{data?.permissions?.["wallet.deposit"] && !loading && !data?.billingSettings?.payment_methods?.length && <p className="wl-muted">No payment receiver is enabled. Contact your Agency or administrator.</p>}</article>
     </section>
     <section className="wl-card"><h2>Transaction history</h2><div className="wl-list">{data?.transactions?.map((item) => <div key={item.id} className="wl-row">{item.direction === "credit" ? <ArrowDownCircle className="credit" /> : <ArrowUpCircle className="debit" />}<div><strong>{item.description || item.transaction_type}</strong><small>{new Date(item.created_at).toLocaleString()}</small></div><span className={item.direction}>{item.direction === "credit" ? "+" : "−"}{Number(item.amount).toFixed(2)}</span><b>{Number(item.balance_after).toFixed(2)}</b></div>)}{!loading && !data?.transactions?.length && <p className="wl-muted">No wallet transactions yet.</p>}</div></section>
     <section className="wl-card"><h2>Deposit requests</h2><div className="wl-list">{data?.deposits?.map((item) => <div key={item.id} className="wl-row"><div><strong>{item.payment_method}</strong><small>{item.payment_reference || "No reference"}</small></div><span>{Number(item.amount).toFixed(2)}</span><b className={`status-${String(item.status).toLowerCase()}`}>{item.status}</b></div>)}{!loading && !data?.deposits?.length && <p className="wl-muted">No deposit requests.</p>}</div></section>

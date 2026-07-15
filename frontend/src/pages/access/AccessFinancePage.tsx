@@ -37,7 +37,17 @@ interface DepositRequest {
   status: string;
   payment_method: string;
   payment_reference?: string | null;
+  receiver_account?: string | null;
   accounts?: { name?: string; email?: string } | null;
+}
+interface BillingSettings {
+  booking_credit_cost: number | string;
+  bkash_enabled: boolean;
+  bkash_number?: string | null;
+  bkash_instructions?: string | null;
+  nagad_enabled: boolean;
+  nagad_number?: string | null;
+  nagad_instructions?: string | null;
 }
 
 function errorMessage(error: unknown, fallback = "Request failed") {
@@ -55,6 +65,7 @@ export default function AccessFinancePage() {
   const [deposits, setDeposits] = useState<DepositRequest[]>([]);
   const [adjustment, setAdjustment] = useState({ amount: "", direction: "credit", description: "" });
   const [bookingCreditCost, setBookingCreditCost] = useState("1.00");
+  const [paymentSettings, setPaymentSettings] = useState({ bkashEnabled: false, bkashNumber: "", bkashInstructions: "", nagadEnabled: false, nagadNumber: "", nagadInstructions: "" });
   const [savingBookingCost, setSavingBookingCost] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -69,8 +80,16 @@ export default function AccessFinancePage() {
     setDeposits(response.deposits || []);
   }
   async function loadBillingSettings() {
-    const response = await accessAdminApi<{ settings: { booking_credit_cost: number | string } }>("/billing-settings");
+    const response = await accessAdminApi<{ settings: BillingSettings }>("/billing-settings");
     setBookingCreditCost(Number(response.settings?.booking_credit_cost || 0).toFixed(2));
+    setPaymentSettings({
+      bkashEnabled: response.settings?.bkash_enabled === true,
+      bkashNumber: response.settings?.bkash_number || "",
+      bkashInstructions: response.settings?.bkash_instructions || "",
+      nagadEnabled: response.settings?.nagad_enabled === true,
+      nagadNumber: response.settings?.nagad_number || "",
+      nagadInstructions: response.settings?.nagad_instructions || "",
+    });
   }
   async function loadDetail(id: string) {
     if (!id) return;
@@ -103,8 +122,8 @@ export default function AccessFinancePage() {
   async function saveBookingCreditCost(event: React.FormEvent) {
     event.preventDefault(); setMessage(""); setSavingBookingCost(true);
     try {
-      const response = await accessAdminApi<{ settings: { booking_credit_cost: number | string } }>("/billing-settings", {
-        method: "PUT", body: { bookingCreditCost: Number(bookingCreditCost) },
+      const response = await accessAdminApi<{ settings: BillingSettings }>("/billing-settings", {
+        method: "PUT", body: { bookingCreditCost: Number(bookingCreditCost), ...paymentSettings },
       });
       setBookingCreditCost(Number(response.settings.booking_credit_cost).toFixed(2));
       setMessage("Per-booking credit cost updated. New successful reservations will use this amount.");
@@ -116,12 +135,21 @@ export default function AccessFinancePage() {
     <main className="ap-main"><header className="ap-topbar"><div><small>ACCESS POLICIES</small><strong>Permissions, deposits and credit ledger</strong></div><div className="ap-account"><span className="ap-role ap-role--admin">ADMIN</span><div><strong>{user?.name}</strong><small>{user?.email}</small></div><button onClick={() => { logout(); navigate("/access/login"); }}><LogOut />Logout</button></div></header>
       <section className="af-head"><ShieldCheck /><div><small>SECURITY & FINANCE</small><h1>Account controls</h1><p>Only explicitly enabled capabilities are available to managed accounts.</p></div></section>
       {message && <div className="ap-error af-message">{message}</div>}
-      <section className="ap-panel af-booking-cost"><div><small>RESERVATION BILLING</small><h2>Credit cost per successful booking</h2><p>The amount is held while a reservation is being created, debited only after SVP confirms success, and released automatically if creation fails.</p></div><form onSubmit={saveBookingCreditCost}><label>Credits per booking<input type="number" min="0" max="1000000" step="0.01" value={bookingCreditCost} onChange={(event) => setBookingCreditCost(event.target.value)} required /></label><button className="ap-btn ap-btn--gold" disabled={savingBookingCost}>{savingBookingCost ? "Saving…" : "Save booking cost"}</button></form></section>
+      <section className="ap-panel af-booking-cost"><div><small>GLOBAL BILLING DEFAULT</small><h2>Booking cost & payment receivers</h2><p>These settings apply to users without an Agency override. Credit is debited only after SVP confirms a successful reservation.</p></div><form onSubmit={saveBookingCreditCost} style={{ gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))" }}>
+        <label>Credits per booking<input type="number" min="0" max="1000000" step="0.01" value={bookingCreditCost} onChange={(event) => setBookingCreditCost(event.target.value)} required /></label>
+        <label className="af-method-toggle" style={{ display: "flex", flexDirection: "row", alignItems: "center" }}><input style={{ width: "18px", minHeight: "18px" }} type="checkbox" checked={paymentSettings.bkashEnabled} onChange={(event) => setPaymentSettings({ ...paymentSettings, bkashEnabled: event.target.checked })} /> Enable bKash</label>
+        <label>bKash receiver number<input value={paymentSettings.bkashNumber} onChange={(event) => setPaymentSettings({ ...paymentSettings, bkashNumber: event.target.value })} required={paymentSettings.bkashEnabled} /></label>
+        <label>bKash instructions<input value={paymentSettings.bkashInstructions} maxLength={500} onChange={(event) => setPaymentSettings({ ...paymentSettings, bkashInstructions: event.target.value })} placeholder="Send Money and enter transaction ID" /></label>
+        <label className="af-method-toggle" style={{ display: "flex", flexDirection: "row", alignItems: "center" }}><input style={{ width: "18px", minHeight: "18px" }} type="checkbox" checked={paymentSettings.nagadEnabled} onChange={(event) => setPaymentSettings({ ...paymentSettings, nagadEnabled: event.target.checked })} /> Enable Nagad</label>
+        <label>Nagad receiver number<input value={paymentSettings.nagadNumber} onChange={(event) => setPaymentSettings({ ...paymentSettings, nagadNumber: event.target.value })} required={paymentSettings.nagadEnabled} /></label>
+        <label>Nagad instructions<input value={paymentSettings.nagadInstructions} maxLength={500} onChange={(event) => setPaymentSettings({ ...paymentSettings, nagadInstructions: event.target.value })} placeholder="Send Money and enter transaction ID" /></label>
+        <button className="ap-btn ap-btn--gold" style={{ alignSelf: "end" }} disabled={savingBookingCost}>{savingBookingCost ? "Saving…" : "Save global billing"}</button>
+      </form></section>
       <section className="af-layout"><article className="ap-panel af-control"><label>Account</label><select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>{accounts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.role} · {item.email}</option>)}</select>
         {selected && <div className="af-account"><strong>{selected.name}</strong><span>{selected.role} · {selected.status} · {detail?.account?.permission_mode || selected.permission_mode || "LEGACY"}</span></div>}
         <h2>Page & action permissions</h2><div className="af-permissions">{PERMISSIONS.map(([key, label, note]) => <label key={key} className="af-permission"><input type="checkbox" checked={permissions[key] || false} onChange={(e) => setPermissions({ ...permissions, [key]: e.target.checked })}/><span><strong>{label}</strong><small>{note}</small></span></label>)}</div><button className="ap-btn ap-btn--gold" onClick={savePermissions}>Save permissions</button></article>
         <aside className="ap-panel af-wallet"><CreditCard /><small>CURRENT BALANCE</small><strong>{Number(detail?.wallet?.balance || 0).toFixed(2)}</strong><span>{detail?.wallet?.currency || "CREDIT"}</span><form onSubmit={postAdjustment}><h2>Manual adjustment</h2><input type="number" min="0.01" step="0.01" placeholder="Amount" value={adjustment.amount} onChange={(e) => setAdjustment({ ...adjustment, amount: e.target.value })} required/><select value={adjustment.direction} onChange={(e) => setAdjustment({ ...adjustment, direction: e.target.value })}><option value="credit">Credit</option><option value="debit">Debit</option></select><input placeholder="Reason" value={adjustment.description} onChange={(e) => setAdjustment({ ...adjustment, description: e.target.value })}/><button className="ap-btn ap-btn--gold">Post adjustment</button></form></aside></section>
       <section className="ap-panel af-table"><header><div><small>IMMUTABLE CREDIT HISTORY</small><h2>Selected account ledger</h2></div></header><div className="af-rows">{detail?.transactions?.map((item) => <div className="af-row" key={item.id}><div><strong>{item.description || item.transaction_type}</strong><small>{new Date(item.created_at).toLocaleString()} · Balance after {Number(item.balance_after).toFixed(2)}</small></div><b>{item.direction === "credit" ? "+" : "−"}{Number(item.amount).toFixed(2)}</b><span className={`ap-status ap-status--${item.direction === "credit" ? "active" : "inactive"}`}>{item.direction}</span></div>)}{detail && !detail.transactions?.length && <p>No wallet transactions for this account.</p>}</div></section>
-      <section className="ap-panel af-table"><header><div><small>PENDING & HISTORICAL</small><h2>Deposit requests</h2></div></header><div className="af-rows">{deposits.map((item) => <div className="af-row" key={item.id}><div><strong>{item.accounts?.name || item.account_id}</strong><small>{item.accounts?.email} · {item.payment_method} · {item.payment_reference || "No reference"}</small></div><b>{Number(item.amount).toFixed(2)}</b><span className={`ap-status ap-status--${item.status === "APPROVED" ? "active" : "inactive"}`}>{item.status}</span>{item.status === "PENDING" && <div><button onClick={() => processDeposit(item.id, "approve")}>Approve</button><button onClick={() => processDeposit(item.id, "reject")}>Reject</button></div>}</div>)}</div></section>
+      <section className="ap-panel af-table"><header><div><small>PENDING & HISTORICAL</small><h2>Deposit requests</h2></div></header><div className="af-rows">{deposits.map((item) => <div className="af-row" key={item.id}><div><strong>{item.accounts?.name || item.account_id}</strong><small>{item.accounts?.email} · {item.payment_method} to {item.receiver_account || "configured receiver"} · Txn {item.payment_reference || "No reference"}</small></div><b>{Number(item.amount).toFixed(2)}</b><span className={`ap-status ap-status--${item.status === "APPROVED" ? "active" : "inactive"}`}>{item.status}</span>{item.status === "PENDING" && <div><button onClick={() => processDeposit(item.id, "approve")}>Approve</button><button onClick={() => processDeposit(item.id, "reject")}>Reject</button></div>}</div>)}</div></section>
     </main></div>;
 }

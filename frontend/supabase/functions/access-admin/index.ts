@@ -36,6 +36,25 @@ function publicAccount(a: any) {
   };
 }
 
+function paymentSettings(body: any) {
+  const bkashEnabled = body.bkashEnabled === true;
+  const nagadEnabled = body.nagadEnabled === true;
+  const bkashNumber = String(body.bkashNumber || "").trim();
+  const nagadNumber = String(body.nagadNumber || "").trim();
+  const validReceiver = (value: string) => /^[0-9+ -]{6,30}$/.test(value);
+  if ((bkashEnabled && !validReceiver(bkashNumber)) || (nagadEnabled && !validReceiver(nagadNumber))) {
+    throw { statusCode: 400, message: "Each enabled payment method requires a valid receiver number" };
+  }
+  return {
+    bkash_enabled: bkashEnabled,
+    bkash_number: bkashNumber || null,
+    bkash_instructions: String(body.bkashInstructions || "").trim().slice(0, 500) || null,
+    nagad_enabled: nagadEnabled,
+    nagad_number: nagadNumber || null,
+    nagad_instructions: String(body.nagadInstructions || "").trim().slice(0, 500) || null,
+  };
+}
+
 async function getAuth(req: Request) {
   const authHeader = req.headers.get("authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -80,7 +99,7 @@ serve(async (req) => {
     if (path === "/billing-settings" && req.method === "GET") {
       const { data, error } = await supabase
         .from("access_billing_settings")
-        .select("booking_credit_cost,updated_at,updated_by")
+        .select("booking_credit_cost,bkash_enabled,bkash_number,bkash_instructions,nagad_enabled,nagad_number,nagad_instructions,updated_at,updated_by")
         .eq("singleton", true)
         .single();
       if (error) throw error;
@@ -98,17 +117,25 @@ serve(async (req) => {
         });
       }
       const normalizedCost = Math.round(bookingCreditCost * 100) / 100;
+      let methods;
+      try { methods = paymentSettings(body); }
+      catch (error: any) {
+        return new Response(JSON.stringify({ message: error.message }), {
+          status: error.statusCode || 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const { data, error } = await supabase.from("access_billing_settings").upsert({
         singleton: true,
         booking_credit_cost: normalizedCost,
+        ...methods,
         updated_by: auth.sub,
         updated_at: new Date().toISOString(),
-      }, { onConflict: "singleton" }).select("booking_credit_cost,updated_at,updated_by").single();
+      }, { onConflict: "singleton" }).select("booking_credit_cost,bkash_enabled,bkash_number,bkash_instructions,nagad_enabled,nagad_number,nagad_instructions,updated_at,updated_by").single();
       if (error) throw error;
       await supabase.from("access_audit_log").insert({
         actor_account_id: auth.sub,
         action: "billing.booking_credit_cost.updated",
-        details: { booking_credit_cost: normalizedCost },
+        details: { booking_credit_cost: normalizedCost, bkash_enabled: methods.bkash_enabled, nagad_enabled: methods.nagad_enabled },
       });
       return new Response(JSON.stringify({ message: "Booking credit cost updated", settings: data }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },

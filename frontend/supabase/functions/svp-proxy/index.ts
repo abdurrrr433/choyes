@@ -52,7 +52,7 @@ async function requireAccessPermission(req: Request, permissionKey: string) {
   const supabase = getSupabase();
   const { data: account } = await supabase
     .from("accounts")
-    .select("id,role,status,permission_mode")
+    .select("id,role,status,permission_mode,agency_id")
     .eq("id", payload.sub || "")
     .single();
   if (!account || account.status !== "ACTIVE" || account.role !== "USER") {
@@ -68,7 +68,22 @@ async function requireAccessPermission(req: Request, permissionKey: string) {
   return { supabase, account };
 }
 
-async function getBookingCreditCost(supabase: ReturnType<typeof getSupabase>): Promise<number> {
+async function getBookingCreditCost(supabase: ReturnType<typeof getSupabase>, agencyId?: string | null): Promise<number> {
+  if (agencyId) {
+    const { data: agencySettings, error: agencyError } = await supabase
+      .from("agency_billing_settings")
+      .select("booking_credit_cost")
+      .eq("agency_id", agencyId)
+      .maybeSingle();
+    if (agencyError) throw { statusCode: 500, message: "Could not load agency booking credit cost", details: agencyError.message };
+    if (agencySettings) {
+      const agencyAmount = Number(agencySettings.booking_credit_cost);
+      if (!Number.isFinite(agencyAmount) || agencyAmount < 0) {
+        throw { statusCode: 500, message: "Invalid agency booking credit cost configuration" };
+      }
+      return agencyAmount;
+    }
+  }
   const { data, error } = await supabase
     .from("access_billing_settings")
     .select("booking_credit_cost")
@@ -602,7 +617,7 @@ Deno.serve(async (req) => {
       }
 
       if (isBookingCreate && accessContext?.account.permission_mode === "MANAGED") {
-        bookingCreditCost = await getBookingCreditCost(accessContext.supabase);
+        bookingCreditCost = await getBookingCreditCost(accessContext.supabase, accessContext.account.agency_id);
         if (bookingCreditCost > 0) {
           const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
           const { data: holdId, error: holdError } = await accessContext.supabase.rpc("wallet_place_booking_hold", {

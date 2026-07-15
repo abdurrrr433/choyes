@@ -86,6 +86,41 @@ async function requireAccount(req: Request) {
   return { supabase, account, permissions: await loadPermissions(supabase, account) };
 }
 
+async function resolveBillingSettings(supabase: ReturnType<typeof getSupabase>, account: any) {
+  let settings: any = null;
+  let source = "ADMIN";
+  let billingOwnerId: string | null = null;
+  if (account.agency_id) {
+    const { data, error } = await supabase.from("agency_billing_settings")
+      .select("booking_credit_cost,bkash_enabled,bkash_number,bkash_instructions,nagad_enabled,nagad_number,nagad_instructions")
+      .eq("agency_id", account.agency_id).maybeSingle();
+    if (error) throw error;
+    if (data) {
+      settings = data;
+      source = "AGENCY";
+      billingOwnerId = account.agency_id;
+    }
+  }
+  if (!settings) {
+    const { data, error } = await supabase.from("access_billing_settings")
+      .select("booking_credit_cost,bkash_enabled,bkash_number,bkash_instructions,nagad_enabled,nagad_number,nagad_instructions,updated_by")
+      .eq("singleton", true).single();
+    if (error) throw error;
+    settings = data;
+    billingOwnerId = data?.updated_by || null;
+  }
+  const paymentMethods = [
+    settings.bkash_enabled && settings.bkash_number ? { code: "BKASH", label: "bKash", receiver_account: settings.bkash_number, instructions: settings.bkash_instructions } : null,
+    settings.nagad_enabled && settings.nagad_number ? { code: "NAGAD", label: "Nagad", receiver_account: settings.nagad_number, instructions: settings.nagad_instructions } : null,
+  ].filter(Boolean);
+  return {
+    booking_credit_cost: settings.booking_credit_cost,
+    source,
+    billing_owner_id: billingOwnerId,
+    payment_methods: paymentMethods,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const url = new URL(req.url);
@@ -95,13 +130,13 @@ Deno.serve(async (req) => {
     const { supabase, account, permissions } = await requireAccount(req);
 
     if (path === "/me" && req.method === "GET") {
-      const [{ data: wallet }, { data: transactions }, { data: deposits }, { data: billingSettings }] = await Promise.all([
+      const billingSettings = await resolveBillingSettings(supabase, account);
+      const [{ data: wallet }, { data: transactions }, { data: deposits }] = await Promise.all([
         supabase.from("wallets").select("balance,currency,updated_at").eq("account_id", account.id).single(),
         supabase.from("wallet_transactions").select("*").eq("account_id", account.id).order("created_at", { ascending: false }).limit(100),
         supabase.from("deposit_requests").select("*").eq("account_id", account.id).order("created_at", { ascending: false }).limit(50),
-        supabase.from("access_billing_settings").select("booking_credit_cost").eq("singleton", true).single(),
       ]);
-      return json({ account, permissions, billingSettings: billingSettings || { booking_credit_cost: 1 }, wallet: wallet || { balance: 0, currency: "CREDIT" }, transactions: transactions || [], deposits: deposits || [] });
+      return json({ account, permissions, billingSettings, wallet: wallet || { balance: 0, currency: "CREDIT" }, transactions: transactions || [], deposits: deposits || [] });
     }
 
     if (path === "/deposits" && req.method === "POST") {
@@ -114,7 +149,9 @@ Deno.serve(async (req) => {
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
         throw { statusCode: 400, message: "Deposit amount must be between 0 and 1,000,000" };
       }
-      if (!paymentMethod || paymentMethod.length > 80 || paymentReference.length > 160 || note.length > 500) {
+      const billingSettings = await resolveBillingSettings(supabase, account);
+      const selectedMethod = billingSettings.payment_methods.find((method: any) => method.code === paymentMethod.toUpperCase());
+      if (!selectedMethod || !paymentReference || paymentReference.length > 160 || note.length > 500) {
         throw { statusCode: 400, message: "Invalid deposit details" };
       }
       const { count } = await supabase
@@ -127,8 +164,10 @@ Deno.serve(async (req) => {
       const { data: deposit, error } = await supabase.from("deposit_requests").insert({
         account_id: account.id,
         amount,
-        payment_method: paymentMethod,
+        payment_method: selectedMethod.code,
         payment_reference: paymentReference || null,
+        receiver_account: selectedMethod.receiver_account,
+        billing_owner_id: billingSettings.billing_owner_id,
         user_note: note || null,
       }).select().single();
       if (error) throw error;
@@ -136,7 +175,7 @@ Deno.serve(async (req) => {
         actor_account_id: account.id,
         target_account_id: account.id,
         action: "deposit.requested",
-        details: { deposit_id: deposit.id, amount },
+        details: { deposit_id: deposit.id, amount, payment_method: selectedMethod.code, billing_source: billingSettings.source },
       });
       return json({ message: "Deposit request submitted", deposit }, 201);
     }
