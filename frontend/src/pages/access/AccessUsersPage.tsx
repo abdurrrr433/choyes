@@ -4,6 +4,13 @@ import { accessAdminApi, accessAgencyApi } from "@/lib/access-api";
 import "@/styles/access-dashboard-premium.css";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 
+const AGENCY_USER_PERMISSIONS = [
+  ["booking.create", "Create bookings", "Create new exam reservations."],
+  ["reservation.manage", "Manage reservations", "Open My bookings, download tickets, cancel and reschedule."],
+  ["payment.create", "Create payments", "Start or retry reservation payments."],
+  ["wallet.deposit", "Request deposits", "Submit wallet deposit requests for admin approval."],
+] as const;
+
 export default function AccessUsersPage() {
   const { user, logout } = useAccessAuth();
   const navigate = useNavigate();
@@ -28,6 +35,15 @@ export default function AccessUsersPage() {
   const [newPassword, setNewPassword] = useState("");
   const [pwLoading, setPwLoading] = useState(false);
   const [pwMsg, setPwMsg] = useState("");
+
+  // Agency-owned user permission modal
+  const [permissionModalId, setPermissionModalId] = useState<string | null>(null);
+  const [permissionModalName, setPermissionModalName] = useState("");
+  const [permissionMode, setPermissionMode] = useState("LEGACY");
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  const [permissionLoading, setPermissionLoading] = useState(false);
+  const [permissionSaving, setPermissionSaving] = useState(false);
+  const [permissionMsg, setPermissionMsg] = useState("");
 
   useEffect(() => {
     if (user?.role === "AGENCY") fetchUsers();
@@ -87,6 +103,44 @@ export default function AccessUsersPage() {
       setPwMsg(err?.message || "Failed to update password");
     } finally {
       setPwLoading(false);
+    }
+  }
+
+  async function openUserPermissions(u: any) {
+    setPermissionModalId(u.id);
+    setPermissionModalName(u.name);
+    setPermissionMode(u.permission_mode || "LEGACY");
+    setPermissions({});
+    setPermissionMsg("");
+    setPermissionLoading(true);
+    try {
+      const res = await accessAgencyApi(`/users/${u.id}/permissions`);
+      setPermissionMode(res.user?.permission_mode || "LEGACY");
+      setPermissions(res.permissions || {});
+    } catch (err: any) {
+      setPermissionMsg(err?.data?.message || err?.message || "Failed to load permissions");
+    } finally {
+      setPermissionLoading(false);
+    }
+  }
+
+  async function saveUserPermissions(e: React.FormEvent) {
+    e.preventDefault();
+    if (!permissionModalId) return;
+    setPermissionSaving(true);
+    setPermissionMsg("");
+    try {
+      await accessAgencyApi(`/users/${permissionModalId}/permissions`, {
+        method: "PUT",
+        body: { permissions },
+      });
+      setPermissionMode("MANAGED");
+      setPermissionMsg("Permissions saved successfully!");
+      await fetchUsers();
+    } catch (err: any) {
+      setPermissionMsg(err?.data?.message || err?.message || "Failed to save permissions");
+    } finally {
+      setPermissionSaving(false);
     }
   }
 
@@ -211,15 +265,26 @@ export default function AccessUsersPage() {
                             </button>
                           </td>
                           <td style={tdStyle}>
-                            <button
-                              onClick={() => { setPwModalId(u.id); setPwModalName(u.name); setNewPassword(""); setPwMsg(""); }}
-                              style={{
-                                padding: "4px 10px", borderRadius: "6px", border: "1px solid #1976d2",
-                                background: "#e3f2fd", color: "#1565c0", cursor: "pointer", fontSize: "12px", fontWeight: 600,
-                              }}
-                            >
-                              Change Password
-                            </button>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                              <button
+                                onClick={() => void openUserPermissions(u)}
+                                style={{
+                                  padding: "4px 10px", borderRadius: "6px", border: "1px solid #8a6a13",
+                                  background: "#fff8df", color: "#73570d", cursor: "pointer", fontSize: "12px", fontWeight: 700,
+                                }}
+                              >
+                                Permissions
+                              </button>
+                              <button
+                                onClick={() => { setPwModalId(u.id); setPwModalName(u.name); setNewPassword(""); setPwMsg(""); }}
+                                style={{
+                                  padding: "4px 10px", borderRadius: "6px", border: "1px solid #1976d2",
+                                  background: "#e3f2fd", color: "#1565c0", cursor: "pointer", fontSize: "12px", fontWeight: 600,
+                                }}
+                              >
+                                Change Password
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -264,6 +329,59 @@ export default function AccessUsersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {permissionModalId && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex",
+          alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "16px",
+        }} onClick={() => !permissionSaving && setPermissionModalId(null)}>
+          <div style={{
+            background: "#fff", borderRadius: "16px", padding: "28px", width: "min(520px,100%)",
+            maxHeight: "90vh", overflowY: "auto", boxShadow: "0 8px 32px rgba(0,0,0,.2)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start", marginBottom: "20px" }}>
+              <div>
+                <h3 style={{ margin: "0 0 4px" }}>User Permissions</h3>
+                <p style={{ color: "#666", fontSize: "14px", margin: 0 }}>
+                  <strong>{permissionModalName}</strong> · {permissionMode}
+                </p>
+              </div>
+              <button type="button" aria-label="Close permissions" onClick={() => setPermissionModalId(null)} disabled={permissionSaving}
+                style={{ border: 0, background: "#f1f3f5", borderRadius: "8px", width: "34px", height: "34px", cursor: "pointer", fontSize: "18px" }}>×</button>
+            </div>
+
+            {permissionLoading ? <p>Loading permissions...</p> : (
+              <form onSubmit={saveUserPermissions}>
+                <div style={{ display: "grid", gap: "10px" }}>
+                  {AGENCY_USER_PERMISSIONS.map(([key, label, note]) => (
+                    <label key={key} style={{
+                      display: "flex", gap: "12px", alignItems: "flex-start", padding: "13px",
+                      border: `1px solid ${permissions[key] ? "#d6b14c" : "#e2e5e9"}`,
+                      borderRadius: "10px", background: permissions[key] ? "#fffaf0" : "#fff", cursor: "pointer",
+                    }}>
+                      <input type="checkbox" checked={permissions[key] === true}
+                        onChange={(e) => setPermissions((current) => ({ ...current, [key]: e.target.checked }))}
+                        style={{ marginTop: "3px", width: "17px", height: "17px" }} />
+                      <span><strong style={{ display: "block", fontSize: "14px" }}>{label}</strong><small style={{ color: "#68717b" }}>{note}</small></span>
+                    </label>
+                  ))}
+                </div>
+                {permissionMsg && <p style={{
+                  color: permissionMsg.includes("success") ? "#2e7d32" : "#c62828", fontSize: "14px", margin: "14px 0 0",
+                }}>{permissionMsg}</p>}
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "20px" }}>
+                  <button type="button" onClick={() => setPermissionModalId(null)} disabled={permissionSaving}
+                    style={{ padding: "9px 18px", borderRadius: "8px", border: "1px solid #ccc", background: "#f5f5f5", cursor: "pointer", fontWeight: 600 }}>Cancel</button>
+                  <button type="submit" disabled={permissionSaving}
+                    style={{ padding: "9px 18px", borderRadius: "8px", border: 0, background: "#8a6a13", color: "#fff", cursor: "pointer", fontWeight: 700 }}>
+                    {permissionSaving ? "Saving..." : "Save Permissions"}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

@@ -13,6 +13,8 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const JWT_SECRET_RAW = Deno.env.get("JWT_ACCESS_SECRET");
 if (!JWT_SECRET_RAW) throw new Error("JWT_ACCESS_SECRET is required");
+const USER_PERMISSION_KEYS = ["booking.create", "reservation.manage", "payment.create", "wallet.deposit"] as const;
+type UserPermissionKey = typeof USER_PERMISSION_KEYS[number];
 
 async function getJwtKey() {
   const encoder = new TextEncoder();
@@ -33,6 +35,23 @@ function publicAccount(a: any) {
     permission_mode: a.permission_mode || "LEGACY", self_registered: Boolean(a.self_registered),
     created_at: a.created_at, updated_at: a.updated_at,
   };
+}
+
+function effectiveUserPermissions(mode: string, rows: Array<{ permission_key: string; allowed: boolean }>) {
+  const permissions: Record<UserPermissionKey, boolean> = mode === "MANAGED"
+    ? Object.fromEntries(USER_PERMISSION_KEYS.map((key) => [key, false])) as Record<UserPermissionKey, boolean>
+    : {
+      "booking.create": true,
+      "reservation.manage": true,
+      "payment.create": true,
+      "wallet.deposit": false,
+    };
+  for (const row of rows) {
+    if (USER_PERMISSION_KEYS.includes(row.permission_key as UserPermissionKey)) {
+      permissions[row.permission_key as UserPermissionKey] = Boolean(row.allowed);
+    }
+  }
+  return permissions;
 }
 
 async function getAuth(req: Request) {
@@ -108,6 +127,67 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: "User created", user: publicAccount(account) }), {
         status: 201, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // GET/PUT /users/:id/permissions. The ownership filters are mandatory:
+    // an agency can never inspect or modify another agency's user.
+    const permissionMatch = path.match(/^\/users\/([^/]+)\/permissions$/);
+    if (permissionMatch && (req.method === "GET" || req.method === "PUT")) {
+      const accountId = permissionMatch[1];
+      const { data: target } = await supabase.from("accounts")
+        .select("id,name,email,role,status,agency_id,permission_mode")
+        .eq("id", accountId)
+        .eq("role", "USER")
+        .eq("agency_id", auth.sub)
+        .single();
+      if (!target) {
+        return new Response(JSON.stringify({ message: "User not found under this agency" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (req.method === "GET") {
+        const { data: rows, error } = await supabase.from("account_permissions")
+          .select("permission_key,allowed,note,updated_at")
+          .eq("account_id", accountId)
+          .in("permission_key", [...USER_PERMISSION_KEYS]);
+        if (error) throw error;
+        return new Response(JSON.stringify({
+          user: publicAccount(target),
+          permissions: effectiveUserPermissions(target.permission_mode || "LEGACY", rows || []),
+        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const body = await req.json();
+      const input = body.permissions && typeof body.permissions === "object" ? body.permissions : {};
+      const note = String(body.note || "Agency managed permission update").slice(0, 500);
+      const rows = USER_PERMISSION_KEYS.map((permissionKey) => ({
+        account_id: accountId,
+        permission_key: permissionKey,
+        allowed: input[permissionKey] === true,
+        granted_by: auth.sub,
+        note: note || null,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error: permissionError } = await supabase.from("account_permissions")
+        .upsert(rows, { onConflict: "account_id,permission_key" });
+      if (permissionError) throw permissionError;
+      const { error: accountError } = await supabase.from("accounts")
+        .update({ permission_mode: "MANAGED" })
+        .eq("id", accountId)
+        .eq("role", "USER")
+        .eq("agency_id", auth.sub);
+      if (accountError) throw accountError;
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: auth.sub,
+        target_account_id: accountId,
+        action: "agency.permissions.updated",
+        details: { permissions: Object.fromEntries(rows.map((row) => [row.permission_key, row.allowed])) },
+      });
+      return new Response(JSON.stringify({
+        message: "User permissions updated",
+        permissions: Object.fromEntries(rows.map((row) => [row.permission_key, row.allowed])),
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // PATCH /users/:id/status
