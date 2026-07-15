@@ -29,6 +29,16 @@ interface DashboardDepositRequest {
 }
 
 interface DashboardWalletData {
+  account: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    status: string;
+    agency_id?: string | null;
+    self_registered?: boolean;
+  };
+  permissions: Record<string, boolean>;
   wallet: { balance: number | string; currency: string };
   transactions: DashboardWalletTransaction[];
   deposits: DashboardDepositRequest[];
@@ -72,7 +82,7 @@ const BADGE_LABEL: Record<PaymentRecord["status"], string> = {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { hasPermission } = useAccessAuth();
+  const { user: accessUser, hasPermission } = useAccessAuth();
   const [me, setMe] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -86,6 +96,10 @@ export default function DashboardPage() {
   const [walletData, setWalletData] = useState<DashboardWalletData | null>(null);
   const [walletLoading, setWalletLoading] = useState(true);
   const [walletError, setWalletError] = useState("");
+  const [depositForm, setDepositForm] = useState({ amount: "", paymentMethod: "", paymentReference: "", note: "" });
+  const [depositSubmitting, setDepositSubmitting] = useState(false);
+  const [depositMessage, setDepositMessage] = useState("");
+  const [depositError, setDepositError] = useState("");
 
   useEffect(() => {
     const { accessToken } = getSession();
@@ -126,6 +140,30 @@ export default function DashboardPage() {
     }
   }
 
+  async function submitDeposit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDepositMessage("");
+    setDepositError("");
+    setDepositSubmitting(true);
+    try {
+      await accessWalletApi("/deposits", {
+        body: {
+          amount: Number(depositForm.amount),
+          paymentMethod: depositForm.paymentMethod,
+          paymentReference: depositForm.paymentReference,
+          note: depositForm.note,
+        },
+      });
+      setDepositForm({ amount: "", paymentMethod: "", paymentReference: "", note: "" });
+      setDepositMessage("Deposit request submitted successfully. Your agency or administrator can now review it.");
+      await loadWallet();
+    } catch (err: any) {
+      setDepositError(err?.data?.message || err?.message || "Deposit request failed");
+    } finally {
+      setDepositSubmitting(false);
+    }
+  }
+
   async function handleLogout() {
     setLoggingOut(true);
     setError("");
@@ -142,7 +180,8 @@ export default function DashboardPage() {
   }
 
   const summary = summarizePayments(payments);
-  const displayName = me?.name || me?.login || "User";
+  const account = walletData?.account || accessUser;
+  const displayName = account?.name || me?.name || me?.login || "User";
   const initials = useMemo(() => initialsFrom(displayName), [displayName]);
 
   return (
@@ -245,6 +284,19 @@ export default function DashboardPage() {
 
         {error ? <div className="dp-error">{error}</div> : null}
 
+        <section className="dp-panel dp-account-panel">
+          <div className="dp-panel-head">
+            <div><h2>My account</h2><span className="dp-sub">Your candidate identity and account access details.</span></div>
+            <span className="dp-badge dp-badge--success">{account?.status || "ACTIVE"}</span>
+          </div>
+          <div className="dp-account-grid">
+            <div><span>Full name</span><strong>{account?.name || displayName}</strong></div>
+            <div><span>Email address</span><strong>{account?.email || "Not available"}</strong></div>
+            <div><span>Account role</span><strong>{account?.role || "USER"}</strong></div>
+            <div><span>Account ID</span><strong className="dp-account-id">{account?.id || "Loading…"}</strong></div>
+          </div>
+        </section>
+
         <section className="dp-stats">
           <div className="dp-stat dp-stat--gold">
             <div className="dp-stat-head"><div className="dp-stat-ico">¤</div></div>
@@ -292,6 +344,29 @@ export default function DashboardPage() {
             <div className="dp-stat dp-stat--amber"><span className="dp-stat-label">Deposit requests</span><strong>{walletLoading ? "…" : walletData?.deposits?.length || 0}</strong><small>{walletData?.deposits?.filter((item) => item.status === "PENDING").length || 0} pending</small></div>
             <div className="dp-stat dp-stat--gold"><span className="dp-stat-label">Ledger entries</span><strong>{walletLoading ? "…" : walletData?.transactions?.length || 0}</strong><small>Latest 100 entries available</small></div>
           </div>}
+
+          <div className="dp-deposit-box">
+            <div className="dp-deposit-copy">
+              <span className="dp-deposit-eyebrow">ADD CREDIT</span>
+              <h3>Request a deposit</h3>
+              <p>Submit your payment details here. Your balance updates only after your agency or administrator approves the request.</p>
+            </div>
+            {walletLoading && !walletData ? (
+              <div className="dp-permission-note">Loading your deposit permission…</div>
+            ) : walletData?.permissions?.["wallet.deposit"] ? (
+              <form className="dp-deposit-form" onSubmit={submitDeposit}>
+                <label><span>Amount *</span><input type="number" min="0.01" max="1000000" step="0.01" placeholder="0.00" value={depositForm.amount} onChange={(event) => setDepositForm({ ...depositForm, amount: event.target.value })} required /></label>
+                <label><span>Payment method *</span><input maxLength={80} placeholder="Bank, bKash, cash…" value={depositForm.paymentMethod} onChange={(event) => setDepositForm({ ...depositForm, paymentMethod: event.target.value })} required /></label>
+                <label><span>Payment reference</span><input maxLength={160} placeholder="Transaction/reference ID" value={depositForm.paymentReference} onChange={(event) => setDepositForm({ ...depositForm, paymentReference: event.target.value })} /></label>
+                <label><span>Note</span><input maxLength={500} placeholder="Optional note" value={depositForm.note} onChange={(event) => setDepositForm({ ...depositForm, note: event.target.value })} /></label>
+                <button className="dp-btn dp-btn--primary" type="submit" disabled={depositSubmitting || walletLoading}>{depositSubmitting ? "Submitting…" : "Submit deposit request"}</button>
+              </form>
+            ) : (
+              <div className="dp-permission-note">Deposit requests are not enabled for this account. Contact your agency or administrator to enable the wallet deposit permission.</div>
+            )}
+            {depositMessage && <div className="dp-success">{depositMessage}</div>}
+            {depositError && <div className="dp-error dp-form-message">{depositError}</div>}
+          </div>
 
           <h3 style={{ margin: "0 0 10px", fontSize: "15px" }}>Recent credit & debit history</h3>
           <div className="dp-table-wrap"><table className="dp-table"><thead><tr><th>Description</th><th>Date</th><th>Type</th><th>Amount</th><th>Balance</th></tr></thead><tbody>
