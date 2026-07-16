@@ -75,7 +75,7 @@ Railway-provided runtime variables are automatic. You should not add them manual
 Required backend variables you must set manually in Railway:
 - `NODE_ENV=production`
 - `APP_NAME=SVP Backend API`
-- `CORS_ORIGINS=https://choyes-woad.vercel.app,https://svp-book.vercel.app,https://svp-book-abdur-razzak-s-projects.vercel.app`
+- `CORS_ORIGINS=https://choice-pc-sv.xyz,https://www.choice-pc-sv.xyz,https://choyes-woad.vercel.app,https://svp-book.vercel.app,https://svp-book-abdur-razzak-s-projects.vercel.app`
 - `VERCEL_PROJECT_SLUG=choyes-woad`
 - `JWT_ACCESS_SECRET=<strong-random-secret>`
 - `JWT_REFRESH_SECRET=<strong-random-secret>`

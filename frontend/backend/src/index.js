@@ -45,6 +45,8 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
 const hardcodedOrigins = [
+  'https://choice-pc-sv.xyz',
+  'https://www.choice-pc-sv.xyz',
   'https://choyes-woad.vercel.app',
   'https://svp-book.vercel.app',
   'https://svp-book-abdur-razzak-s-projects.vercel.app',
