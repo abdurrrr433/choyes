@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verify } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import { getReservationBillingOperation } from "./billing-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -597,13 +598,16 @@ Deno.serve(async (req) => {
       const svpPath = typeof route.svpPath === "function" ? route.svpPath(match, query) : route.svpPath;
       const body = route.bodyForward ? await req.json().catch(() => ({})) : undefined;
 
-      const isBookingCreate = req.method === "POST" && path === "/exam-reservations";
+      const billingOperation = getReservationBillingOperation(req.method, path);
+      const isBookingCreate = billingOperation === "booking";
+      const isBookingReschedule = billingOperation === "reschedule";
+      const isChargeableBooking = billingOperation !== null;
       const isBookingPreparation = req.method === "POST" && (path === "/temporary-seats" || path === "/reservation-credits/use");
       const isPaymentCreate = req.method === "POST" && path === "/payments";
       const isReservationManagement =
         (req.method === "GET" && /^\/exam-reservations(?:\/[^/]+)?$/.test(path)) ||
         (req.method === "DELETE" && /^\/exam-reservations\/[^/]+$/.test(path)) ||
-        (req.method === "POST" && /^\/exam-reservations\/[^/]+\/reschedule$/.test(path));
+        isBookingReschedule;
       let accessContext: Awaited<ReturnType<typeof requireAccessPermission>> | null = null;
       let walletHoldId = "";
       let bookingCreditCost = 0;
@@ -616,14 +620,14 @@ Deno.serve(async (req) => {
         accessContext = await requireAccessPermission(req, "payment.create");
       }
 
-      if (isBookingCreate && accessContext?.account.permission_mode === "MANAGED") {
+      if (isChargeableBooking && accessContext?.account.permission_mode === "MANAGED") {
         bookingCreditCost = await getBookingCreditCost(accessContext.supabase, accessContext.account.agency_id);
         if (bookingCreditCost > 0) {
           const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
           const { data: holdId, error: holdError } = await accessContext.supabase.rpc("wallet_place_booking_hold", {
             p_account_id: accessContext.account.id,
             p_amount: bookingCreditCost,
-            p_idempotency_key: `booking-request:${accessContext.account.id}:${requestId}`,
+            p_idempotency_key: `${billingOperation}-request:${accessContext.account.id}:${requestId}`,
           });
           if (holdError) throw { statusCode: 402, message: holdError.message || "Insufficient wallet balance" };
           walletHoldId = String(holdId || "");
@@ -632,14 +636,20 @@ Deno.serve(async (req) => {
 
       try {
         const data: any = await svpFetch(buildPath(svpPath, query), { method: route.method, token: svpToken, body });
-        if (isBookingCreate && accessContext?.account.permission_mode === "MANAGED") {
-          const reservationId = findReservationId(data) || `svp-success:${req.headers.get("x-request-id") || walletHoldId}`;
+        if (isChargeableBooking && accessContext?.account.permission_mode === "MANAGED") {
+          const reservationId = findReservationId(data) ||
+            (isBookingReschedule ? String(match[1]) : `svp-success:${req.headers.get("x-request-id") || walletHoldId}`);
           let walletTransaction: any = null;
           if (walletHoldId) {
             const { data: completedTransaction, error: completeError } = await accessContext.supabase.rpc("wallet_complete_booking_hold", {
               p_hold_id: walletHoldId,
               p_reservation_id: reservationId,
-              p_metadata: { source: "svp-proxy", svp_success: true, configured_credit_cost: bookingCreditCost },
+              p_metadata: {
+                source: "svp-proxy",
+                operation: billingOperation,
+                svp_success: true,
+                configured_credit_cost: bookingCreditCost,
+              },
             });
             if (completeError) {
               throw { statusCode: 500, message: "Reservation completed but wallet finalization failed", details: { reservationId, reason: completeError.message } };
