@@ -55,6 +55,7 @@ export default function AccessUsersPage() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("PENDING");
   const [agencyId, setAgencyId] = useState("");
@@ -140,12 +141,12 @@ export default function AccessUsersPage() {
     setMsg("");
     try {
       if (isAdmin) {
-        await accessAdminApi("/users", { body: { name, email, password, status, agencyId: agencyId || undefined } });
+        await accessAdminApi("/users", { body: { name, email, phone, password, status, agencyId: agencyId || undefined } });
       } else {
-        await accessAgencyApi("/users", { body: { name, email, password, status } });
+        await accessAgencyApi("/users", { body: { name, email, phone, password, status } });
       }
       setMsg("User created successfully!");
-      setName(""); setEmail(""); setPassword(""); setAgencyId("");
+      setName(""); setEmail(""); setPhone(""); setPassword(""); setAgencyId("");
       if (!isAdmin) fetchUsers();
     } catch (err: any) {
       setMsg(err?.data?.message || err?.message || "Failed");
@@ -341,6 +342,11 @@ export default function AccessUsersPage() {
                   style={{ width: "100%", padding: "8px 14px", borderRadius: "8px", border: "1px solid #ccc", boxSizing: "border-box" }} />
               </div>
               <div>
+                <label style={{ display: "block", marginBottom: "6px", fontWeight: 700, fontSize: "14px", color: "#4c5560" }}>Full Phone Number</label>
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+8801712345678" required pattern="\+[1-9][0-9 ()-]{7,20}" title="Use full international format, for example +8801712345678"
+                  style={{ width: "100%", padding: "8px 14px", borderRadius: "8px", border: "1px solid #ccc", boxSizing: "border-box" }} />
+              </div>
+              <div>
                 <label style={{ display: "block", marginBottom: "6px", fontWeight: 700, fontSize: "14px", color: "#4c5560" }}>Password</label>
                 <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 8 characters" required minLength={8}
                   style={{ width: "100%", padding: "8px 14px", borderRadius: "8px", border: "1px solid #ccc", boxSizing: "border-box" }} />
@@ -377,6 +383,7 @@ export default function AccessUsersPage() {
                       <tr style={{ background: "#f5f7fa", textAlign: "left" }}>
                         <th style={thStyle}>Name</th>
                         <th style={thStyle}>Email</th>
+                        <th style={thStyle}>Phone</th>
                         <th style={thStyle}>Status</th>
                         <th style={thStyle}>Active</th>
                         <th style={thStyle}>Actions</th>
@@ -387,6 +394,7 @@ export default function AccessUsersPage() {
                         <tr key={u.id} style={{ borderTop: "1px solid #e8ecf0" }}>
                           <td style={tdStyle}>{u.name}</td>
                           <td style={tdStyle}>{u.email}</td>
+                          <td style={tdStyle}>{u.phone || "-"}</td>
                           <td style={tdStyle}>
                             <span style={{
                               padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: 700,

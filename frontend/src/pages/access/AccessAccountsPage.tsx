@@ -8,6 +8,7 @@ interface Account {
   id: string;
   name: string;
   email: string;
+  phone?: string | null;
   role: string;
   status: string;
   agency_id?: string;
@@ -146,6 +147,7 @@ export default function AccessAccountsPage() {
                   <tr style={{ background: "#f5f7fa", textAlign: "left" }}>
                     <th style={thStyle}>Name</th>
                     <th style={thStyle}>Email</th>
+                    <th style={thStyle}>Phone</th>
                     <th style={thStyle}>Role</th>
                     <th style={thStyle}>Status</th>
                     <th style={thStyle}>Active</th>
@@ -157,6 +159,7 @@ export default function AccessAccountsPage() {
                     <tr key={acc.id} style={{ borderTop: "1px solid #e8ecf0" }}>
                       <td style={tdStyle}>{acc.name}</td>
                       <td style={tdStyle}>{acc.email}</td>
+                      <td style={tdStyle}>{acc.phone || "-"}</td>
                       <td style={tdStyle}>
                         <span style={{
                           padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: 700,

@@ -11,6 +11,7 @@ export default function AccessAgenciesPage() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("PENDING");
   const [msg, setMsg] = useState("");
@@ -21,9 +22,9 @@ export default function AccessAgenciesPage() {
     setLoading(true);
     setMsg("");
     try {
-      await accessAdminApi("/agencies", { body: { name, email, password, status } });
+      await accessAdminApi("/agencies", { body: { name, email, phone, password, status } });
       setMsg("Agency created successfully!");
-      setName(""); setEmail(""); setPassword("");
+      setName(""); setEmail(""); setPhone(""); setPassword("");
     } catch (err: any) {
       setMsg(err?.data?.message || err?.message || "Failed");
     } finally {
@@ -73,6 +74,11 @@ export default function AccessAgenciesPage() {
               <div>
                 <label style={{ display: "block", marginBottom: "6px", fontWeight: 700, fontSize: "14px", color: "#4c5560" }}>Email</label>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="agency@example.com" required
+                  style={{ width: "100%", padding: "8px 14px", borderRadius: "8px", border: "1px solid #ccc", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ display: "block", marginBottom: "6px", fontWeight: 700, fontSize: "14px", color: "#4c5560" }}>Full Phone Number</label>
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+8801712345678" required pattern="\+[1-9][0-9 ()-]{7,20}" title="Use full international format, for example +8801712345678"
                   style={{ width: "100%", padding: "8px 14px", borderRadius: "8px", border: "1px solid #ccc", boxSizing: "border-box" }} />
               </div>
               <div>

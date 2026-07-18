@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { create, verify, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import { FULL_PHONE_ERROR, normalizeFullPhone } from "../_shared/phone.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,6 +37,7 @@ function publicAccount(account: any) {
     id: account.id,
     name: account.name,
     email: account.email,
+    phone: account.phone,
     role: account.role,
     status: account.status,
     agency_id: account.agency_id,
@@ -226,8 +228,9 @@ serve(async (req) => {
     // POST /register — public Access Portal registration. The role is always
     // USER and managed permissions start disabled until an admin grants them.
     if (path === "/register" && req.method === "POST") {
-      const { name, email, password } = await req.json();
+      const { name, email, phone: phoneInput, password } = await req.json();
       const normalizedEmail = String(email || "").trim().toLowerCase();
+      const phone = normalizeFullPhone(phoneInput);
       if (!String(name || "").trim() || !/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
         return new Response(JSON.stringify({ message: "Valid name and email are required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -238,15 +241,27 @@ serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      if (!phone) {
+        return new Response(JSON.stringify({ message: FULL_PHONE_ERROR }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const { data: existing } = await supabase.from("accounts").select("id").eq("email", normalizedEmail).single();
       if (existing) {
         return new Response(JSON.stringify({ message: "Email already in use" }), {
           status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      const { data: existingPhone } = await supabase.from("accounts").select("id").eq("phone", phone).maybeSingle();
+      if (existingPhone) {
+        return new Response(JSON.stringify({ message: "Phone number already in use" }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const { data: account, error } = await supabase.from("accounts").insert({
         name: String(name).trim().slice(0, 160),
         email: normalizedEmail,
+        phone,
         password: bcrypt.hashSync(password),
         role: "USER",
         status: "ACTIVE",

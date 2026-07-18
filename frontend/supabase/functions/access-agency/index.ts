@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { verify } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import { FULL_PHONE_ERROR, normalizeFullPhone } from "../_shared/phone.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,7 +31,7 @@ function getSupabase() {
 
 function publicAccount(a: any) {
   return {
-    id: a.id, name: a.name, email: a.email, role: a.role, status: a.status,
+    id: a.id, name: a.name, email: a.email, phone: a.phone, role: a.role, status: a.status,
     agency_id: a.agency_id, created_by_id: a.created_by_id,
     permission_mode: a.permission_mode || "LEGACY", self_registered: Boolean(a.self_registered),
     created_at: a.created_at, updated_at: a.updated_at,
@@ -173,9 +174,10 @@ serve(async (req) => {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const { name, email, password, status } = await req.json();
-      if (!name || !email || !password) {
-        return new Response(JSON.stringify({ message: "name, email, password required" }), {
+      const { name, email, phone: phoneInput, password, status } = await req.json();
+      const phone = normalizeFullPhone(phoneInput);
+      if (!name || !email || !password || !phone) {
+        return new Response(JSON.stringify({ message: !phone ? FULL_PHONE_ERROR : "name, email, phone, password required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -187,9 +189,16 @@ serve(async (req) => {
         });
       }
 
+      const { data: existingPhone } = await supabase.from("accounts").select("id").eq("phone", phone).maybeSingle();
+      if (existingPhone) {
+        return new Response(JSON.stringify({ message: "Phone number already in use" }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const hash = bcrypt.hashSync(password);
       const { data: account, error } = await supabase.from("accounts").insert({
-        name, email: email.toLowerCase(), password: hash,
+        name, email: email.toLowerCase(), phone, password: hash,
         role: "USER", status: status || "PENDING",
         agency_id: auth.sub, created_by_id: auth.sub,
         permission_mode: "MANAGED",

@@ -10,7 +10,7 @@ function errorMessage(error: unknown, fallback: string) {
 
 export default function AccessRegisterPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "", confirm: "" });
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -19,7 +19,7 @@ export default function AccessRegisterPage() {
     if (form.password !== form.confirm) { setMessage("Passwords do not match"); return; }
     setLoading(true); setMessage("");
     try {
-      const response = await accessAuthApi<{ message: string }>("/register", { name: form.name, email: form.email, password: form.password });
+      const response = await accessAuthApi<{ message: string }>("/register", { name: form.name, email: form.email, phone: form.phone, password: form.password });
       setMessage(response.message);
       setTimeout(() => navigate("/access/login"), 1400);
     } catch (error: unknown) { setMessage(errorMessage(error, "Registration failed")); }
@@ -37,6 +37,7 @@ export default function AccessRegisterPage() {
       <form className="ap-form" onSubmit={submit}>
         <div className="ap-field"><label htmlFor="register-name">Full name</label><input id="register-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
         <div className="ap-field"><label htmlFor="register-email">Email</label><input id="register-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></div>
+        <div className="ap-field"><label htmlFor="register-phone">Full phone number</label><input id="register-phone" type="tel" placeholder="+8801712345678" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required pattern="\+[1-9][0-9 ()-]{7,20}" title="Use full international format, for example +8801712345678" /></div>
         <div className="ap-field"><label htmlFor="register-password">Password</label><input id="register-password" type="password" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></div>
         <div className="ap-field"><label htmlFor="register-confirm">Confirm password</label><input id="register-confirm" type="password" minLength={8} value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} required /></div>
         <button className="ap-submit" disabled={loading}>{loading ? "Creating…" : "Create USER account"}</button>

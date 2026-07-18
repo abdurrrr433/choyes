@@ -2,6 +2,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { verify } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import {
+  buildAgencyDashboard,
+  extractSvpCollection,
+  normalizePayment,
+  normalizeReservation,
+  type SvpIdentity,
+} from "./dashboard-utils.ts";
+import { FULL_PHONE_ERROR, normalizeFullPhone } from "../_shared/phone.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +22,10 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const JWT_SECRET_RAW = Deno.env.get("JWT_ACCESS_SECRET");
 if (!JWT_SECRET_RAW) throw new Error("JWT_ACCESS_SECRET is required");
 const PERMISSION_KEYS = ["booking.create", "reservation.manage", "payment.create", "wallet.deposit", "users.create"];
+const SVP_BASE = Deno.env.get("SVP_BASE_URL") || "https://svp-international-api.pacc.sa";
+const SVP_ORIGIN = "https://svp-international.pacc.sa";
+const SVP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
+const DASHBOARD_SYNC_LIMIT = 50;
 
 async function getJwtKey() {
   const encoder = new TextEncoder();
@@ -27,9 +39,101 @@ function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+async function getEncKey(): Promise<Uint8Array> {
+  const raw = Deno.env.get("SESSION_ENC_KEY_BASE64") || "";
+  if (raw) {
+    try {
+      const decoded = Uint8Array.from(atob(raw), (character) => character.charCodeAt(0));
+      if (decoded.length === 32) return decoded;
+    } catch { /* derive the configured value below */ }
+    return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
+  }
+  const fallback = Deno.env.get("JWT_REFRESH_SECRET") || "dev";
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fallback)));
+}
+
+async function decryptSvpToken(encrypted: string): Promise<string> {
+  const buffer = Uint8Array.from(atob(encrypted), (character) => character.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", await getEncKey(), "AES-GCM", false, ["decrypt"]);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: buffer.slice(0, 12) }, key, buffer.slice(12));
+  return new TextDecoder().decode(decrypted);
+}
+
+async function fetchSvpDashboardData(path: string, token: string) {
+  const response = await fetch(`${SVP_BASE}${path}?locale=en`, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      Origin: SVP_ORIGIN,
+      Referer: `${SVP_ORIGIN}/`,
+      "User-Agent": SVP_UA,
+    },
+    signal: AbortSignal.timeout(7000),
+  });
+  const responseText = await response.text();
+  let payload: unknown;
+  try { payload = responseText ? JSON.parse(responseText) : {}; }
+  catch { payload = {}; }
+  if (!response.ok) throw new Error(`SVP ${path} returned ${response.status}`);
+  return payload;
+}
+
+type DashboardSession = { user_id: string; svp_access_enc: string | null };
+type AccountSummary = { id: string; name: string; email: string; phone: string | null; role: string; status: string; agency_id: string | null; created_at: string | null };
+
+async function syncSvpDashboard(svpUsers: SvpIdentity[], sessions: DashboardSession[]) {
+  const identityById = new Map(svpUsers.map((item) => [item.id, item]));
+  const latestSessionByUser = new Map<string, DashboardSession>();
+  for (const session of sessions) {
+    if (!latestSessionByUser.has(session.user_id) && session.svp_access_enc) {
+      latestSessionByUser.set(session.user_id, session);
+    }
+  }
+  const selectedSessions = [...latestSessionByUser.values()].slice(0, DASHBOARD_SYNC_LIMIT);
+  const reservations: ReturnType<typeof normalizeReservation>[] = [];
+  const payments: ReturnType<typeof normalizePayment>[] = [];
+  let syncedAccounts = 0;
+  let syncFailures = 0;
+
+  for (let offset = 0; offset < selectedSessions.length; offset += 10) {
+    const batch = selectedSessions.slice(offset, offset + 10);
+    await Promise.all(batch.map(async (session) => {
+      const identity = identityById.get(session.user_id);
+      if (!identity) return;
+      try {
+        const token = await decryptSvpToken(session.svp_access_enc);
+        const [reservationResult, paymentResult] = await Promise.allSettled([
+          fetchSvpDashboardData("/api/v1/individual_labor_space/exam_reservations", token),
+          fetchSvpDashboardData("/api/v1/individual_labor_space/payments", token),
+        ]);
+        if (reservationResult.status === "fulfilled") {
+          reservations.push(...extractSvpCollection(reservationResult.value, ["exam_reservations", "reservations", "records", "items", "results"])
+            .map((item) => normalizeReservation(item, identity)));
+        }
+        if (paymentResult.status === "fulfilled") {
+          payments.push(...extractSvpCollection(paymentResult.value, ["payments", "payment_transactions", "records", "items", "results"])
+            .map((item) => normalizePayment(item, identity)));
+        }
+        if (reservationResult.status === "rejected" && paymentResult.status === "rejected") syncFailures += 1;
+        else syncedAccounts += 1;
+      } catch {
+        syncFailures += 1;
+      }
+    }));
+  }
+  return {
+    reservations,
+    payments,
+    sessionAccounts: latestSessionByUser.size,
+    syncedAccounts,
+    syncFailures,
+    truncated: latestSessionByUser.size > DASHBOARD_SYNC_LIMIT,
+  };
+}
+
 function publicAccount(a: any) {
   return {
-    id: a.id, name: a.name, email: a.email, role: a.role, status: a.status,
+    id: a.id, name: a.name, email: a.email, phone: a.phone, role: a.role, status: a.status,
     agency_id: a.agency_id, created_by_id: a.created_by_id,
     permission_mode: a.permission_mode || "LEGACY", self_registered: Boolean(a.self_registered),
     created_at: a.created_at, updated_at: a.updated_at,
@@ -95,6 +199,60 @@ serve(async (req) => {
   }
 
   try {
+    // GET /dashboard — account ownership plus live SVP reservation/payment analytics.
+    if (path === "/dashboard" && req.method === "GET") {
+      const [accountsResult, svpUsersResult, sessionsResult] = await Promise.all([
+        supabase.from("accounts").select("id,name,email,phone,role,status,agency_id,created_at").order("created_at", { ascending: false }),
+        supabase.from("svp_users").select("id,login,email,full_name,created_at").order("created_at", { ascending: false }),
+        supabase.from("svp_sessions")
+          .select("id,user_id,svp_access_enc,svp_access_exp,updated_at")
+          .is("revoked_at", null)
+          .not("svp_access_enc", "is", null)
+          .order("updated_at", { ascending: false }),
+      ]);
+      if (accountsResult.error) throw accountsResult.error;
+      if (svpUsersResult.error) throw svpUsersResult.error;
+      if (sessionsResult.error) throw sessionsResult.error;
+
+      const accounts = (accountsResult.data || []) as AccountSummary[];
+      const svpUsers = (svpUsersResult.data || []) as SvpIdentity[];
+      const live = await syncSvpDashboard(svpUsers, (sessionsResult.data || []) as DashboardSession[]);
+      const agencies = buildAgencyDashboard(accounts, svpUsers, live.reservations, live.payments);
+      const accountByEmail = new Map(accounts.map((item) => [String(item.email || "").toLowerCase(), item]));
+      const agencyById = new Map(accounts.filter((item) => item.role === "AGENCY").map((item) => [item.id, item]));
+      const recentPayments = [...live.payments]
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
+        .slice(0, 30)
+        .map((payment) => {
+          const account = accountByEmail.get(payment.svpEmail);
+          const agency = account?.agency_id ? agencyById.get(account.agency_id) : null;
+          return { ...payment, accountName: account?.name || payment.svpLogin, agencyName: agency?.name || null };
+        });
+      const linkedSvpAccounts = svpUsers.filter((item) => accountByEmail.has(String(item.email || item.login || "").toLowerCase())).length;
+
+      return new Response(JSON.stringify({
+        stats: {
+          totalAccounts: accounts.length,
+          agencies: accounts.filter((item) => item.role === "AGENCY").length,
+          agencyUsers: accounts.filter((item) => item.role === "USER" && item.agency_id).length,
+          realSvpAccounts: svpUsers.length,
+          linkedSvpAccounts,
+          completedBookings: live.reservations.filter((item) => item.completed).length,
+          successfulPayments: live.payments.filter((item) => item.paid).length,
+        },
+        agencies,
+        recentPayments,
+        recentAccounts: accounts.slice(0, 12).map(publicAccount),
+        live: {
+          sessionAccounts: live.sessionAccounts,
+          syncedAccounts: live.syncedAccounts,
+          syncFailures: live.syncFailures,
+          truncated: live.truncated,
+          refreshedAt: new Date().toISOString(),
+        },
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // GET/PUT /billing-settings — global charge for each successful reservation.
     if (path === "/billing-settings" && req.method === "GET") {
       const { data, error } = await supabase
@@ -144,9 +302,10 @@ serve(async (req) => {
 
     // POST /agencies
     if (path === "/agencies" && req.method === "POST") {
-      const { name, email, password, status } = await req.json();
-      if (!name || !email || !password) {
-        return new Response(JSON.stringify({ message: "name, email, password required" }), {
+      const { name, email, phone: phoneInput, password, status } = await req.json();
+      const phone = normalizeFullPhone(phoneInput);
+      if (!name || !email || !password || !phone) {
+        return new Response(JSON.stringify({ message: !phone ? FULL_PHONE_ERROR : "name, email, phone, password required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -158,9 +317,16 @@ serve(async (req) => {
         });
       }
 
+      const { data: existingPhone } = await supabase.from("accounts").select("id").eq("phone", phone).maybeSingle();
+      if (existingPhone) {
+        return new Response(JSON.stringify({ message: "Phone number already in use" }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const hash = bcrypt.hashSync(password);
       const { data: account, error } = await supabase.from("accounts").insert({
-        name, email: email.toLowerCase(), password: hash,
+        name, email: email.toLowerCase(), phone, password: hash,
         role: "AGENCY", status: status || "PENDING", created_by_id: auth.sub,
         permission_mode: "MANAGED",
       }).select().single();
@@ -173,9 +339,10 @@ serve(async (req) => {
 
     // POST /users
     if (path === "/users" && req.method === "POST") {
-      const { name, email, password, agencyId, status } = await req.json();
-      if (!name || !email || !password) {
-        return new Response(JSON.stringify({ message: "name, email, password required" }), {
+      const { name, email, phone: phoneInput, password, agencyId, status } = await req.json();
+      const phone = normalizeFullPhone(phoneInput);
+      if (!name || !email || !password || !phone) {
+        return new Response(JSON.stringify({ message: !phone ? FULL_PHONE_ERROR : "name, email, phone, password required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -183,6 +350,13 @@ serve(async (req) => {
       const { data: existing } = await supabase.from("accounts").select("id").eq("email", email.toLowerCase()).single();
       if (existing) {
         return new Response(JSON.stringify({ message: "Email already in use" }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: existingPhone } = await supabase.from("accounts").select("id").eq("phone", phone).maybeSingle();
+      if (existingPhone) {
+        return new Response(JSON.stringify({ message: "Phone number already in use" }), {
           status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -198,7 +372,7 @@ serve(async (req) => {
 
       const hash = bcrypt.hashSync(password);
       const { data: account, error } = await supabase.from("accounts").insert({
-        name, email: email.toLowerCase(), password: hash,
+        name, email: email.toLowerCase(), phone, password: hash,
         role: "USER", status: status || "PENDING",
         agency_id: agencyId || null, created_by_id: auth.sub,
         permission_mode: "MANAGED",
