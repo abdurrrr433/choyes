@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { authRouter } from './routes/auth.js';
 import { svpRouter } from './routes/svp.js';
+import { passportRouter } from './routes/passport.js';
 import { createSupabaseAdmin, createSupabaseAnon, hasSupabaseEnv, requireSupabaseEnv } from './lib/supabaseServer.js';
 
 function requireEnv(name) {
@@ -143,6 +144,7 @@ app.get('/', (_, res) => res.json({
 
 app.use('/api/auth', authRouter);
 app.use('/api/svp', svpRouter);
+app.use('/api', passportRouter);
 
 // global error handler
 app.use((err, req, res, next) => {
