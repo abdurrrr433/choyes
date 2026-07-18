@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiAuthForm, apiAuthGet } from "@/lib/api";
+import { scanPassport, isSupportedPassportImage, type PassportScanData } from "@/lib/passport-scan-client";
 import "@/styles/registration-premium.css";
+
+// The recaptcha_response the live SVP API expects is a real Google reCAPTCHA
+// token (~2000+ chars) issued to the *pacc.sa* domain's site key. A widget
+// embedded on this app's own domain cannot legally mint that token — Google
+// validates the requesting origin against the site key's registered domains.
+// Until/unless SVP allowlists this domain (or a same-origin proxy is set up),
+// the only way to get a valid token is to complete the real reCAPTCHA on the
+// official SVP registration page and paste the token here within ~2 minutes
+// before it expires.
+const RECAPTCHA_HELP = "Open https://svp-international.pacc.sa/auth/register in another tab, open DevTools → Network, fill the form there, and copy the 'recaptcha_response' value from the request right before submitting there — then paste it here immediately (tokens expire in ~2 minutes) and submit this form.";
 
 function pickArray(payload: any): any[] {
   for (const value of [payload, payload?.data, payload?.countries, payload?.data?.countries, payload?.items]) if (Array.isArray(value)) return value;
@@ -68,9 +79,12 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [confirmationId, setConfirmationId] = useState("");
-  const [form, setForm] = useState<Record<string, string>>({ country_id:"", country_code:"", nationality_id:"", national_id:"", first_name:"", last_name:"", date_of_birth:"", passport_number:"", passport_expiration_date:"", sex:"male", email:"", phone_number:"", password:"", password_confirmation:"", otp_attempt:"", education_level:"middle", experience_level:"between_3_and_5", knowledge_level:"erudite,experienced,certificated", institute_name:"", recaptcha_response:"" });
+  const [form, setForm] = useState<Record<string, string>>({ country_id:"", country_code:"", nationality_id:"", national_id:"", first_name:"", last_name:"", date_of_birth:"", passport_number:"", passport_expiration_date:"", sex:"male", email:"", phone_number:"", password:"", password_confirmation:"", otp_attempt:"", education_level:"middle", experience_level:"between_3_and_5", knowledge_level:"erudite,experienced,certificated", institute_name:"Bureau of Manpower, Employment and Training (BMET)", recaptcha_response:"" });
   const [passportFile, setPassportFile] = useState<File | null>(null);
   const [profileImage, setProfileImage] = useState<File | null>(null);
+  const [scanStatus, setScanStatus] = useState<"idle" | "scanning" | "done" | "error">("idle");
+  const [scanMessage, setScanMessage] = useState("");
+  const [pendingNationalityCode, setPendingNationalityCode] = useState("");
   const selectedCountry = useMemo(() => countries.find((item) => String(item.id) === form.country_id), [countries, form.country_id]);
   const selectedKnowledge = useMemo(() => new Set(form.knowledge_level ? form.knowledge_level.split(",") : []), [form.knowledge_level]);
   const passwordMismatch = form.password_confirmation.length > 0 && form.password !== form.password_confirmation;
@@ -79,7 +93,15 @@ export default function RegisterPage() {
   useEffect(() => {
     if (!form.country_id) { setNationalities([]); return; }
     apiAuthGet<any>(`/registration/countries/${encodeURIComponent(form.country_id)}`)
-      .then((data) => setNationalities(data?.nationalities || data?.data?.nationalities || []))
+      .then((data) => {
+        const list = data?.nationalities || data?.data?.nationalities || [];
+        setNationalities(list);
+        if (pendingNationalityCode) {
+          const match = list.find((n: any) => [n.code, n.nationality_code, n.iso3, n.alpha3].some((c) => String(c || "").toUpperCase() === pendingNationalityCode));
+          if (match) update("nationality_id", String(match.id));
+          setPendingNationalityCode("");
+        }
+      })
       .catch((err) => { setNationalities([]); setMessage(err.message); });
   }, [form.country_id]);
   function update(key: string, value: string) { setForm((old) => ({ ...old, [key]: value })); }
@@ -89,6 +111,42 @@ export default function RegisterPage() {
       if (current.has(value)) current.delete(value); else current.add(value);
       return { ...old, knowledge_level: Array.from(current).join(",") };
     });
+  }
+  async function handlePassportFile(file: File | null) {
+    setPassportFile(file);
+    if (!file) { setScanStatus("idle"); setScanMessage(""); return; }
+    if (!isSupportedPassportImage(file)) {
+      // PDFs etc. are still accepted as the upload itself, just skip auto-fill for them.
+      setScanStatus("idle"); setScanMessage("Auto-fill only works with JPEG/PNG/WEBP photos — you can still upload this file and fill the fields manually.");
+      return;
+    }
+    setScanStatus("scanning"); setScanMessage("Reading passport…");
+    try {
+      const data: PassportScanData = await scanPassport(file);
+      setForm((old) => ({
+        ...old,
+        passport_number: data.passport_number || old.passport_number,
+        first_name: data.first_name || old.first_name,
+        last_name: data.last_name || old.last_name,
+        date_of_birth: data.date_of_birth || old.date_of_birth,
+        passport_expiration_date: data.passport_expiration_date || old.passport_expiration_date,
+        sex: data.sex || old.sex,
+      }));
+      if (data.country_code) {
+        const match = countries.find((c) => [c.code, c.country_code, c.iso2, c.alpha2].some((v) => String(v || "").toUpperCase() === data.country_code.toUpperCase()));
+        if (match) {
+          setForm((old) => ({ ...old, country_id: String(match.id), country_code: match.code || match.country_code || data.country_code, nationality_id: "" }));
+          if (data.nationality_code) setPendingNationalityCode(data.nationality_code.toUpperCase());
+        }
+      }
+      if (data.confidence === "low") {
+        setScanStatus("error"); setScanMessage("Passport read with low confidence — please double check the auto-filled fields below.");
+      } else {
+        setScanStatus("done"); setScanMessage("Auto-filled from passport. Please review before continuing.");
+      }
+    } catch (err: any) {
+      setScanStatus("error"); setScanMessage(err?.message || "Auto-fill failed — please enter your details manually.");
+    }
   }
   function appendCommon(data: FormData) {
     Object.entries(form).forEach(([key, value]) => { if (value) data.append(key, value); });
@@ -136,7 +194,8 @@ export default function RegisterPage() {
       <label>First name<input required value={form.first_name} onChange={(e)=>update("first_name",e.target.value)}/></label><label>Last name<input required value={form.last_name} onChange={(e)=>update("last_name",e.target.value)}/></label>
       <label>Date of birth<input required type="date" value={form.date_of_birth} onChange={(e)=>update("date_of_birth",e.target.value)}/></label><label>Sex<select value={form.sex} onChange={(e)=>update("sex",e.target.value)}><option value="male">Male</option><option value="female">Female</option></select></label>
       <label>Passport number<input required value={form.passport_number} onChange={(e)=>update("passport_number",e.target.value)}/></label><label>Passport expiration<input required type="date" value={form.passport_expiration_date} onChange={(e)=>update("passport_expiration_date",e.target.value)}/></label>
-      <label>Passport document<input required type="file" accept="image/*,.pdf" onChange={(e)=>setPassportFile(e.target.files?.[0]||null)}/></label><label>Profile image<input type="file" accept="image/*" onChange={(e)=>setProfileImage(e.target.files?.[0]||null)}/></label>
+      <label>Passport document<input required type="file" accept="image/*,.pdf" onChange={(e)=>handlePassportFile(e.target.files?.[0]||null)}/><small>Upload a clear photo of your passport's info page — first name, last name, dates, sex and country will auto-fill.</small></label><label>Profile image<input type="file" accept="image/*" onChange={(e)=>setProfileImage(e.target.files?.[0]||null)}/></label>
+      {scanStatus!=="idle" && <div className={`rg-wide rg-scan-status rg-scan-${scanStatus}`}>{scanStatus==="scanning"?"⏳ ":scanStatus==="done"?"✓ ":scanStatus==="error"?"⚠ ":""}{scanMessage}</div>}
     </div><button disabled={loading}>{loading?"Validating…":"Validate and continue"}</button></form>}
     {step===2 && <form onSubmit={register} className="rg-form"><h2>Account & professional details</h2><div className="rg-grid">
       <label>National ID<input required value={form.national_id} onChange={(e)=>update("national_id",e.target.value)} placeholder="Enter your national identity number"/></label>
@@ -148,8 +207,8 @@ export default function RegisterPage() {
       <label>Education level<select required value={form.education_level} onChange={(e)=>update("education_level",e.target.value)}>{EDUCATION_LEVELS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
       <label>Experience level<select required value={form.experience_level} onChange={(e)=>update("experience_level",e.target.value)}>{EXPERIENCE_LEVELS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
       <label className="rg-wide">Knowledge level<div className="rg-checkgroup">{KNOWLEDGE_LEVELS.map(o=><label key={o.value} className="rg-checkbox"><input type="checkbox" checked={selectedKnowledge.has(o.value)} onChange={()=>toggleKnowledge(o.value)}/>{o.label}</label>)}</div></label>
-      <label>Institute name<input required value={form.institute_name} onChange={(e)=>update("institute_name",e.target.value)} placeholder="Enter your actual institute name"/><small>This is your own institute/employer name; SVP does not auto-fill it.</small></label>
-      <label className="rg-wide">reCAPTCHA response (required by SVP)<textarea required value={form.recaptcha_response} onChange={(e)=>update("recaptcha_response",e.target.value)}/><small>Confirmed from live traffic: the real API call always includes a full reCAPTCHA token here.</small></label>
+      <label>Institute name<input required value={form.institute_name} onChange={(e)=>update("institute_name",e.target.value)}/><small>Confirmed from live traffic: SVP expects the fixed government labor bureau name here, not a personal institute — only change this if you know your case is different.</small></label>
+      <label className="rg-wide">reCAPTCHA response (required by SVP)<textarea required rows={3} placeholder="Paste the recaptcha_response token here" value={form.recaptcha_response} onChange={(e)=>update("recaptcha_response",e.target.value)}/><small>This can't be auto-generated from this app's own domain — Google's reCAPTCHA only issues tokens to the domain a site key is registered for (svp-international.pacc.sa). {RECAPTCHA_HELP}</small></label>
     </div><div className="rg-actions"><button type="button" onClick={()=>setStep(1)}>Back</button><button disabled={loading || passwordMismatch}>{loading?"Creating…":"Complete registration"}</button></div></form>}
     {step===3 && <div className="rg-complete"><strong>✓</strong><h2>Registration submitted</h2><p>Your account is ready for the official login and OTP verification flow.</p><button onClick={()=>navigate("/auth/login")}>Continue to login</button></div>}
     {message&&<div className="rg-message">{message}</div>}<footer>Already registered? <Link to="/auth/login">Sign in</Link></footer></section></main>;
