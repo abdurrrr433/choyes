@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { coercePassportData } from '../src/routes/passport.js';
+import { coercePassportData, detectImageMime } from '../src/routes/passport.js';
+
+test('detects supported images from file bytes when browsers omit MIME metadata', () => {
+  assert.equal(detectImageMime(Buffer.from([0xff, 0xd8, 0xff, ...new Array(9).fill(0)])), 'image/jpeg');
+  assert.equal(detectImageMime(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])), 'image/png');
+  assert.equal(detectImageMime(Buffer.from('RIFF0000WEBP')), 'image/webp');
+  assert.equal(detectImageMime(Buffer.from('%PDF-1.7 test')), '');
+});
 
 test('coerces a separately printed national ID and portrait bounds', () => {
   const result = coercePassportData({

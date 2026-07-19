@@ -14,6 +14,14 @@ const upload = multer({
   limits: { fileSize: MAX_BYTES },
 });
 
+export function detectImageMime(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return '';
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return '';
+}
+
 const SYSTEM_PROMPT = `You are a passport data extractor. You receive a single passport image and return ONLY a JSON object (no markdown, no prose, no code fences) with the fields listed below. If you cannot read a field reliably, use an empty string ""; do NOT invent data.
 
 Return this exact schema:
@@ -134,9 +142,9 @@ router.post('/passport-scan', upload.single('file'), async (req, res, next) => {
       err.statusCode = 400;
       throw err;
     }
-    const mime = (file.mimetype || '').toLowerCase();
+    const mime = detectImageMime(file.buffer);
     if (!ACCEPTED_MIME.has(mime)) {
-      const err = new Error(`Unsupported file type '${mime}'. Please upload a JPEG, PNG or WEBP passport photo.`);
+      const err = new Error('Unsupported or invalid file. Please upload a real JPEG, PNG or WEBP passport photo.');
       err.statusCode = 415;
       throw err;
     }
