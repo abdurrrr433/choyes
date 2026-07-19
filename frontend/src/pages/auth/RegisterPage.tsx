@@ -147,7 +147,6 @@ export default function RegisterPage() {
         last_name: data.last_name || old.last_name,
         date_of_birth: data.date_of_birth || old.date_of_birth,
         passport_expiration_date: data.passport_expiration_date || old.passport_expiration_date,
-        national_id: data.national_id || old.national_id,
         sex: data.sex || old.sex,
       }));
       if (data.country_code) {
@@ -165,11 +164,11 @@ export default function RegisterPage() {
       } else {
         setProfileMessage("Face could not be cropped reliably. Please choose a clear profile photo manually.");
       }
-      const extraFields = [data.national_id ? "National ID" : "", portrait ? "profile photo" : ""].filter(Boolean);
+      const extraFields = [portrait ? "profile photo" : ""].filter(Boolean);
       if (data.confidence === "low") {
         setScanStatus("error"); setScanMessage("Passport read with low confidence — please double check the auto-filled fields below.");
       } else {
-        setScanStatus("done"); setScanMessage(`Auto-filled from passport${extraFields.length ? `, including ${extraFields.join(" and ")}` : ""}. Please review before continuing.${data.national_id ? "" : " National ID was not printed separately, so enter it manually."}`);
+        setScanStatus("done"); setScanMessage(`Auto-filled passport information${extraFields.length ? `, including ${extraFields.join(" and ")}` : ""}. National ID is never auto-filled. Please review before continuing.`);
       }
     } catch (err: any) {
       setScanStatus("error"); setScanMessage(err?.message || "Auto-fill failed — please enter your details manually.");
@@ -232,11 +231,11 @@ export default function RegisterPage() {
       <label>First name<input required value={form.first_name} onChange={(e)=>update("first_name",e.target.value)}/></label><label>Last name<input required value={form.last_name} onChange={(e)=>update("last_name",e.target.value)}/></label>
       <label>Date of birth<input required type="date" value={form.date_of_birth} onChange={(e)=>update("date_of_birth",e.target.value)}/></label><label>Sex<select value={form.sex} onChange={(e)=>update("sex",e.target.value)}><option value="male">Male</option><option value="female">Female</option></select></label>
       <label>Passport number<input required value={form.passport_number} onChange={(e)=>update("passport_number",e.target.value)}/></label><label>Passport expiration<input required type="date" value={form.passport_expiration_date} onChange={(e)=>update("passport_expiration_date",e.target.value)}/></label>
-      <label>National ID / Personal number<input required value={form.national_id} onChange={(e)=>update("national_id",e.target.value)} placeholder="Auto-filled when printed on the passport"/><small>This is read only when the passport prints a separate personal or National ID number.</small></label>
-      <label>Passport document<input required type="file" accept="image/*,.pdf" onChange={(e)=>handlePassportFile(e.target.files?.[0]||null)}/><small>Upload a clear photo of your passport's info page — identity fields, National ID (when printed), and profile face will auto-fill.</small></label><label>Profile image{profilePreview && <img style={{display:"block",width:112,height:132,margin:"8px 0 10px",borderRadius:12,objectFit:"cover"}} src={profilePreview} alt="Profile preview"/>}<input type="file" accept="image/*" onChange={(e)=>handleProfileFile(e.target.files?.[0]||null)}/><small>{profileMessage || "Your face will be cropped from the passport automatically when detected; you can replace it here."}</small></label>
+      <label>Passport document<input required type="file" accept="image/*,.pdf" onChange={(e)=>handlePassportFile(e.target.files?.[0]||null)}/><small>Upload a clear photo of your passport's info page — passport fields and profile face will auto-fill. National ID is not read.</small></label><label>Profile image{profilePreview && <img style={{display:"block",width:112,height:132,margin:"8px 0 10px",borderRadius:12,objectFit:"cover"}} src={profilePreview} alt="Profile preview"/>}<input type="file" accept="image/*" onChange={(e)=>handleProfileFile(e.target.files?.[0]||null)}/><small>{profileMessage || "Your face will be cropped from the passport automatically when detected; you can replace it here."}</small></label>
       {scanStatus!=="idle" && <div className={`rg-wide rg-scan-status rg-scan-${scanStatus}`}>{scanStatus==="scanning"?"⏳ ":scanStatus==="done"?"✓ ":scanStatus==="error"?"⚠ ":""}{scanMessage}</div>}
     </div><button disabled={loading}>{loading?"Validating…":"Validate and continue"}</button></form>}
     {step===2 && <form onSubmit={register} className="rg-form"><h2>Account & professional details</h2><div className="rg-grid">
+      <label>National ID<input required value={form.national_id} onChange={(e)=>update("national_id",e.target.value)} placeholder="Enter National ID manually"/><small>Manual entry only — this is never copied from the passport scan.</small></label>
       <label>Email username<input required value={emailUsername} onChange={(e)=>handleEmailUsername(e.target.value)} placeholder="abdurrazzak3346"/><small>{completeRegistrationEmail(emailUsername) || "Type a username — @yopmail.com will be added automatically."}</small></label>
       <label>Phone number<input required type="tel" value={form.phone_number} onChange={(e)=>update("phone_number",e.target.value)}/></label>
       <label>Password<input required minLength={8} type="password" value={form.password} onChange={(e)=>update("password",e.target.value)}/></label>

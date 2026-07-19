@@ -9,26 +9,26 @@ test('detects supported images from file bytes when browsers omit MIME metadata'
   assert.equal(detectImageMime(Buffer.from('%PDF-1.7 test')), '');
 });
 
-test('coerces a separately printed national ID and portrait bounds', () => {
+test('coerces passport fields and portrait bounds without returning National ID', () => {
   const result = coercePassportData({
     passport_number: ' a 123 ',
-    national_id: ' 1987 654 321 ',
+    national_id: 'must-not-be-returned',
     portrait_box: [101.2, 52.7, 680.8, 399.4],
     confidence: 'HIGH',
   });
 
   assert.equal(result.passport_number, 'A123');
-  assert.equal(result.national_id, '1987654321');
+  assert.equal(Object.hasOwn(result, 'national_id'), false);
   assert.deepEqual(result.portrait_box, [101, 53, 681, 399]);
   assert.equal(result.confidence, 'high');
 });
 
-test('rejects invalid portrait bounds without inventing a national ID', () => {
+test('rejects invalid portrait bounds and ignores non-passport IDs', () => {
   const result = coercePassportData({
     passport_number: 'AB123',
     portrait_box: [100, 100, 110, 110],
   });
 
-  assert.equal(result.national_id, '');
+  assert.equal(Object.hasOwn(result, 'national_id'), false);
   assert.deepEqual(result.portrait_box, []);
 });
