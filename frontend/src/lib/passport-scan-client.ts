@@ -1,10 +1,7 @@
 // Passport auto-fill client.
 //
-// The passport-scan endpoint lives on the FastAPI backend (port 8001, mounted
-// at `/api/passport-scan` via the Kubernetes ingress in the Emergent preview
-// environment). It is a separate concern from the Supabase / Railway SVP proxy
-// used by the rest of the auth flow — that's why this client does NOT reuse
-// `/lib/api.ts`.
+// Passport OCR is exposed by the Railway backend. An explicit URL still wins,
+// which is useful for local FastAPI development and isolated testing.
 //
 // For non-preview deployments, set VITE_PASSPORT_SCAN_URL to an absolute URL
 // (e.g. "https://your-fastapi.example.com/api/passport-scan").
@@ -29,17 +26,22 @@ export interface PassportScanResponse {
 }
 
 const ACCEPTED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"] as const;
+const DEFAULT_RAILWAY_URL = "https://choyes-production.up.railway.app";
 
 function resolveScanUrl(): string {
   const override = import.meta.env.VITE_PASSPORT_SCAN_URL as string | undefined;
   if (override && override.trim()) return override.replace(/\/$/, "");
-  // Relative URL — routed to the FastAPI backend by the Emergent preview ingress.
-  return "/api/passport-scan";
+  const backend = import.meta.env.VITE_BACKEND_URL as string | undefined;
+  if (backend && backend.trim()) return `${backend.replace(/\/$/, "")}/api/passport-scan`;
+  return `${DEFAULT_RAILWAY_URL}/api/passport-scan`;
 }
 
 export function isSupportedPassportImage(file: File): boolean {
   const mime = (file.type || "").toLowerCase();
-  return ACCEPTED_MIME_TYPES.includes(mime as (typeof ACCEPTED_MIME_TYPES)[number]);
+  if (ACCEPTED_MIME_TYPES.includes(mime as (typeof ACCEPTED_MIME_TYPES)[number])) return true;
+  // Some mobile browsers and drag/drop sources omit File.type. The backend
+  // still validates the actual magic bytes before sending anything to Gemini.
+  return !mime && /\.(?:jpe?g|png|webp)$/i.test(file.name);
 }
 
 export async function scanPassport(file: File): Promise<PassportScanData> {
@@ -49,17 +51,22 @@ export async function scanPassport(file: File): Promise<PassportScanData> {
   const form = new FormData();
   form.append("file", file);
 
-  const res = await fetch(resolveScanUrl(), { method: "POST", body: form });
+  let res: Response;
+  try {
+    res = await fetch(resolveScanUrl(), { method: "POST", body: form });
+  } catch {
+    throw new Error("Passport auto-fill service could not be reached. Please try again or enter the details manually.");
+  }
   const text = await res.text();
-  let body: any;
-  try { body = text ? JSON.parse(text) : null; } catch { body = { detail: text }; }
+  let body: (Partial<PassportScanResponse> & { detail?: unknown; message?: unknown }) | null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = null; }
 
   if (!res.ok) {
-    const message = body?.detail || body?.message || `Passport scan failed (HTTP ${res.status})`;
+    const message = body?.detail || body?.message || `Passport auto-fill service is unavailable (HTTP ${res.status}).`;
     throw new Error(String(message));
   }
   if (!body?.ok || !body?.data) {
     throw new Error("Passport scan returned an unexpected response.");
   }
-  return body.data as PassportScanData;
+  return body.data;
 }

@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { authRouter } from './routes/auth.js';
 import { svpRouter } from './routes/svp.js';
+import { passportScanRouter } from './routes/passportScan.js';
 import { createSupabaseAdmin, createSupabaseAnon, hasSupabaseEnv, requireSupabaseEnv } from './lib/supabaseServer.js';
 
 function requireEnv(name) {
@@ -102,6 +103,7 @@ app.use(cors({
 
 // Rate limit auth endpoints
 app.use('/api/auth', rateLimit({ windowMs: 60_000, max: 30 }));
+app.use('/api/passport-scan', rateLimit({ windowMs: 60_000, max: 10 }));
 
 app.get('/health', (_, res) => res.json({
   ok: true,
@@ -142,6 +144,7 @@ app.get('/', (_, res) => res.json({
 }));
 
 app.use('/api/auth', authRouter);
+app.use('/api/passport-scan', passportScanRouter);
 app.use('/api/svp', svpRouter);
 
 // global error handler

@@ -88,6 +88,8 @@ Required backend variables you must set manually in Railway:
 - `SVP_LOCALE=en`
 - `SVP_FE_APP=legislator`
 - `SESSION_ENC_KEY_BASE64=<32-byte-base64-key>`
+- `GEMINI_API_KEY=<Google AI Studio API key>` (required for passport auto-fill)
+- `GEMINI_MODEL=gemini-2.5-flash` (optional; this is the default)
 
 Required frontend env vars (set in Vercel → Project Settings → Environment Variables):
 - `VITE_SUPABASE_URL=https://qdlqrsvkenalwhmfdbaf.supabase.co`
