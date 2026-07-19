@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveCountryDialingCode, toApiDate } from "@/lib/registration-payload";
+import { completeRegistrationEmail, resolveCountryDialingCode, toApiDate } from "@/lib/registration-payload";
 
 describe("registration-payload · toApiDate", () => {
   it("converts <input type=\"date\"> YYYY-MM-DD to SVP DD/MM/YYYY", () => {
@@ -49,9 +49,9 @@ describe("registration-payload · resolveCountryDialingCode", () => {
 
   it("falls back to ISO code fields only when no dialing field is available", () => {
     // Backwards compat: countries API without dialing fields still returns *something* usable.
-    expect(resolveCountryDialingCode({ code: "BD" })).toBe("BD");
+    expect(resolveCountryDialingCode({ code: "SA" })).toBe("SA");
     expect(resolveCountryDialingCode({ country_code: "SA" })).toBe("SA");
-    expect(resolveCountryDialingCode({ code: "BD", country_code: "OTHER" })).toBe("BD");
+    expect(resolveCountryDialingCode({ code: "SA", country_code: "OTHER" })).toBe("SA");
   });
 
   it("returns '' for null / undefined / non-object inputs (never throws)", () => {
@@ -65,11 +65,27 @@ describe("registration-payload · resolveCountryDialingCode", () => {
   it("skips blank/whitespace dialing fields and continues to the next candidate", () => {
     expect(resolveCountryDialingCode({ phone_code: "", dialing_code: "880" })).toBe("+880");
     expect(resolveCountryDialingCode({ phone_code: null, calling_code: "44" })).toBe("+44");
-    expect(resolveCountryDialingCode({ phone_code: "   ", code: "BD" })).toBe("BD");
+    expect(resolveCountryDialingCode({ phone_code: "   ", code: "SA" })).toBe("SA");
   });
 
   it("accepts numeric dialing codes (SVP sometimes returns numbers not strings)", () => {
     expect(resolveCountryDialingCode({ phone_code: 880 })).toBe("+880");
     expect(resolveCountryDialingCode({ dialing_code: 44 })).toBe("+44");
+  });
+
+  it("uses +880 for Bangladesh when the countries response has no dialing field", () => {
+    expect(resolveCountryDialingCode({ country_code: "BGD", english_name: "Bangladesh" })).toBe("+880");
+    expect(resolveCountryDialingCode({ code: "BD" })).toBe("+880");
+  });
+});
+
+describe("registration-payload · completeRegistrationEmail", () => {
+  it("adds the create-account yopmail domain to a username", () => {
+    expect(completeRegistrationEmail("abdurrazzak3346")).toBe("abdurrazzak3346@yopmail.com");
+  });
+
+  it("keeps a complete email address and trims whitespace", () => {
+    expect(completeRegistrationEmail("  person@example.com  ")).toBe("person@example.com");
+    expect(completeRegistrationEmail("   ")).toBe("");
   });
 });

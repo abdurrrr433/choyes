@@ -12,10 +12,12 @@ export interface PassportScanData {
   last_name: string;
   date_of_birth: string;             // ISO YYYY-MM-DD (fits <input type="date"> directly)
   passport_expiration_date: string;  // ISO YYYY-MM-DD
+  national_id: string;               // Explicit personal/National ID printed separately from passport no.
   sex: "male" | "female" | "";
   nationality_code: string;          // 3-letter ISO ("BGD")
   country_code: string;              // 2-letter ISO ("BD")
   issuing_country: string;           // e.g. "BANGLADESH"
+  portrait_box: number[];            // [ymin, xmin, ymax, xmax], normalized 0..1000
   confidence: "high" | "medium" | "low";
   raw?: string;
 }
@@ -40,6 +42,47 @@ export function isSupportedPassportImage(file: File): boolean {
   const mime = (file.type || "").toLowerCase();
   if (ACCEPTED_MIME_TYPES.includes(mime as (typeof ACCEPTED_MIME_TYPES)[number])) return true;
   return !mime && /\.(?:jpe?g|png|webp)$/i.test(file.name);
+}
+
+export async function cropPassportPortrait(file: File, portraitBox: readonly number[]): Promise<File | null> {
+  if (portraitBox.length !== 4 || portraitBox.some((value) => !Number.isFinite(value))) return null;
+  const [rawYmin, rawXmin, rawYmax, rawXmax] = portraitBox.map((value) => Math.max(0, Math.min(1000, value)));
+  if (rawYmax - rawYmin < 30 || rawXmax - rawXmin < 30) return null;
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = objectUrl;
+    await image.decode();
+
+    const portraitWidth = ((rawXmax - rawXmin) / 1000) * image.naturalWidth;
+    const portraitHeight = ((rawYmax - rawYmin) / 1000) * image.naturalHeight;
+    const paddingX = portraitWidth * 0.08;
+    const paddingY = portraitHeight * 0.08;
+    const sourceX = Math.max(0, (rawXmin / 1000) * image.naturalWidth - paddingX);
+    const sourceY = Math.max(0, (rawYmin / 1000) * image.naturalHeight - paddingY);
+    const sourceWidth = Math.min(image.naturalWidth - sourceX, portraitWidth + paddingX * 2);
+    const sourceHeight = Math.min(image.naturalHeight - sourceY, portraitHeight + paddingY * 2);
+    if (sourceWidth < 20 || sourceHeight < 20) return null;
+
+    const maxOutputSide = 720;
+    const scale = Math.min(1, maxOutputSide / Math.max(sourceWidth, sourceHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+    if (!blob) return null;
+    return new File([blob], "passport-profile.jpg", { type: "image/jpeg", lastModified: Date.now() });
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 export async function scanPassport(file: File): Promise<PassportScanData> {

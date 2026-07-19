@@ -32,6 +32,16 @@ export function resolveCountryDialingCode(country: any): string {
     if (!str) continue;
     return str.startsWith("+") ? str : `+${str}`;
   }
+  const isoCode = String(country.country_code || country.code || country.iso2 || country.alpha2 || "").trim().toUpperCase();
+  const countryName = String(country.english_name || country.name || "").trim().toUpperCase();
+  if (isoCode === "BGD" || isoCode === "BD" || countryName === "BANGLADESH") return "+880";
   const legacy = country.code || country.country_code || "";
   return legacy ? String(legacy) : "";
+}
+
+export function completeRegistrationEmail(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.includes("@")) return trimmed;
+  return `${trimmed}@yopmail.com`;
 }

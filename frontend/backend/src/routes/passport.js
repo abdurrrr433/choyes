@@ -23,10 +23,12 @@ Return this exact schema:
   "last_name": "string (surname in UPPERCASE, English/Latin only; empty string if not separately printed)",
   "date_of_birth": "ISO date YYYY-MM-DD",
   "passport_expiration_date": "ISO date YYYY-MM-DD",
+  "national_id": "explicitly printed National ID, Personal No., Personal Number, Identity Number, or equivalent holder identifier; uppercase without spaces; empty when absent",
   "sex": "male | female (lowercase; do not use M/F, do not translate)",
   "nationality_code": "3-letter ISO code, uppercase (BGD, SAU, IND, PAK, EGY, ...)",
   "country_code": "2-letter ISO code, uppercase (BD, SA, IN, PK, EG, ...)",
   "issuing_country": "country name in UPPERCASE English (BANGLADESH, SAUDI ARABIA, ...)",
+  "portrait_box": [100, 100, 700, 450],
   "confidence": "high | medium | low (your own honest self-rating of the extraction quality)"
 }
 
@@ -34,6 +36,8 @@ Rules:
 - The MRZ (2 lines at the bottom of the passport photo page) is usually the most reliable source -- prefer it when it disagrees with the visual page.
 - Dates in the MRZ are YYMMDD; convert them to YYYY-MM-DD. For birth dates, if the 2-digit year is >= current YY, treat it as 19YY; otherwise 20YY. For expiration dates, always treat as 20YY.
 - "SEX" field in the MRZ is M or F -- convert to "male" or "female".
+- Never copy the passport number into national_id. Only return national_id when a separate holder identifier is explicitly printed.
+- portrait_box must be an array of four integers in [ymin, xmin, ymax, xmax] order, normalized from 0 to 1000. It must tightly contain the printed holder portrait/photo, not the full passport page. Return [] when no portrait is visible.
 - Do NOT return markdown or code fences. Return the JSON object and nothing else.`;
 
 const EMPTY_RESULT = Object.freeze({
@@ -42,10 +46,12 @@ const EMPTY_RESULT = Object.freeze({
   last_name: '',
   date_of_birth: '',
   passport_expiration_date: '',
+  national_id: '',
   sex: '',
   nationality_code: '',
   country_code: '',
   issuing_country: '',
+  portrait_box: [],
   confidence: 'low',
   raw: '',
 });
@@ -82,7 +88,16 @@ function parseJsonBlock(text) {
   }
 }
 
-function coerce(data) {
+function normalizePortraitBox(value) {
+  if (!Array.isArray(value) || value.length !== 4) return [];
+  const box = value.map((coordinate) => Math.max(0, Math.min(1000, Math.round(Number(coordinate)))));
+  if (!box.every(Number.isFinite)) return [];
+  const [ymin, xmin, ymax, xmax] = box;
+  if (ymax - ymin < 30 || xmax - xmin < 30) return [];
+  return box;
+}
+
+export function coercePassportData(data) {
   const s = (key, upper = false) => {
     const v = data?.[key];
     if (v === null || v === undefined) return '';
@@ -95,10 +110,12 @@ function coerce(data) {
     last_name: s('last_name', true),
     date_of_birth: s('date_of_birth'),
     passport_expiration_date: s('passport_expiration_date'),
+    national_id: s('national_id', true).replace(/\s+/g, ''),
     sex: s('sex').toLowerCase(),
     nationality_code: s('nationality_code', true),
     country_code: s('country_code', true),
     issuing_country: s('issuing_country', true),
+    portrait_box: normalizePortraitBox(data?.portrait_box),
     confidence: s('confidence').toLowerCase() || 'low',
   };
   const isoDate = /^\d{4}-\d{2}-\d{2}$/;
@@ -154,7 +171,7 @@ router.post('/passport-scan', upload.single('file'), async (req, res, next) => {
 
     const rawText = response?.text || '';
     const parsed = parseJsonBlock(rawText);
-    const data = parsed ? coerce(parsed) : { ...EMPTY_RESULT };
+    const data = parsed ? coercePassportData(parsed) : { ...EMPTY_RESULT };
     data.raw = rawText.slice(0, 4000);
 
     res.json({ ok: true, data });

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiAuthForm, apiAuthGet } from "@/lib/api";
-import { scanPassport, isSupportedPassportImage, type PassportScanData } from "@/lib/passport-scan-client";
+import { cropPassportPortrait, scanPassport, isSupportedPassportImage, type PassportScanData } from "@/lib/passport-scan-client";
+import { completeRegistrationEmail, resolveCountryDialingCode, toApiDate } from "@/lib/registration-payload";
 import "@/styles/registration-premium.css";
 
 // The recaptcha_response the live SVP API expects is a real Google reCAPTCHA
@@ -31,15 +32,6 @@ function deepValue(payload: any, keys: string[]): string {
   }
   return "";
 }
-// Native <input type="date"> always yields ISO "YYYY-MM-DD". The live SVP API
-// (confirmed from captured traffic) expects "DD/MM/YYYY" for date_of_birth and
-// passport_expiration_date — sending ISO format here was silently wrong.
-function toApiDate(iso: string): string {
-  const [y, m, d] = iso.split("-");
-  if (!y || !m || !d) return iso;
-  return `${d}/${m}/${y}`;
-}
-
 // NOTE: these two lists were previously hardcoded down to a single option
 // (the default value) with no other choices selectable. Filled in with the
 // standard SVP enum shape (matches the naming pattern of the confirmed
@@ -82,6 +74,9 @@ export default function RegisterPage() {
   const [form, setForm] = useState<Record<string, string>>({ country_id:"", country_code:"", nationality_id:"", national_id:"", first_name:"", last_name:"", date_of_birth:"", passport_number:"", passport_expiration_date:"", sex:"male", email:"", phone_number:"", password:"", password_confirmation:"", otp_attempt:"", education_level:"middle", experience_level:"between_3_and_5", knowledge_level:"erudite,experienced,certificated", institute_name:"Bureau of Manpower, Employment and Training (BMET)", recaptcha_response:"" });
   const [passportFile, setPassportFile] = useState<File | null>(null);
   const [profileImage, setProfileImage] = useState<File | null>(null);
+  const [profilePreview, setProfilePreview] = useState("");
+  const [profileMessage, setProfileMessage] = useState("");
+  const [emailUsername, setEmailUsername] = useState("");
   const [scanStatus, setScanStatus] = useState<"idle" | "scanning" | "done" | "error">("idle");
   const [scanMessage, setScanMessage] = useState("");
   const [pendingNationalityCode, setPendingNationalityCode] = useState("");
@@ -89,7 +84,28 @@ export default function RegisterPage() {
   const selectedKnowledge = useMemo(() => new Set(form.knowledge_level ? form.knowledge_level.split(",") : []), [form.knowledge_level]);
   const passwordMismatch = form.password_confirmation.length > 0 && form.password !== form.password_confirmation;
 
-  useEffect(() => { apiAuthGet("/registration/countries").then((data) => setCountries(pickArray(data))).catch((err) => setMessage(err.message)); }, []);
+  useEffect(() => {
+    apiAuthGet("/registration/countries").then((data) => {
+      const list = pickArray(data);
+      setCountries(list);
+      const bangladesh = list.find((country) => {
+        const code = String(country.country_code || country.code || country.iso2 || "").toUpperCase();
+        const name = String(country.english_name || country.name || "").toUpperCase();
+        return code === "BGD" || code === "BD" || name === "BANGLADESH";
+      });
+      if (bangladesh) {
+        const dialingCode = resolveCountryDialingCode(bangladesh);
+        setPendingNationalityCode("BGD");
+        setForm((old) => old.country_id ? old : {
+          ...old,
+          country_id: String(bangladesh.id),
+          country_code: dialingCode,
+          phone_number: old.phone_number || dialingCode,
+          nationality_id: "",
+        });
+      }
+    }).catch((err) => setMessage(err.message));
+  }, []);
   useEffect(() => {
     if (!form.country_id) { setNationalities([]); return; }
     apiAuthGet<any>(`/registration/countries/${encodeURIComponent(form.country_id)}`)
@@ -104,6 +120,7 @@ export default function RegisterPage() {
       })
       .catch((err) => { setNationalities([]); setMessage(err.message); });
   }, [form.country_id]);
+  useEffect(() => () => { if (profilePreview) URL.revokeObjectURL(profilePreview); }, [profilePreview]);
   function update(key: string, value: string) { setForm((old) => ({ ...old, [key]: value })); }
   function toggleKnowledge(value: string) {
     setForm((old) => {
@@ -130,23 +147,42 @@ export default function RegisterPage() {
         last_name: data.last_name || old.last_name,
         date_of_birth: data.date_of_birth || old.date_of_birth,
         passport_expiration_date: data.passport_expiration_date || old.passport_expiration_date,
+        national_id: data.national_id || old.national_id,
         sex: data.sex || old.sex,
       }));
       if (data.country_code) {
         const match = countries.find((c) => [c.code, c.country_code, c.iso2, c.alpha2].some((v) => String(v || "").toUpperCase() === data.country_code.toUpperCase()));
         if (match) {
-          setForm((old) => ({ ...old, country_id: String(match.id), country_code: match.code || match.country_code || data.country_code, nationality_id: "" }));
+          setForm((old) => ({ ...old, country_id: String(match.id), country_code: resolveCountryDialingCode(match), nationality_id: "" }));
           if (data.nationality_code) setPendingNationalityCode(data.nationality_code.toUpperCase());
         }
       }
+      const portrait = await cropPassportPortrait(file, data.portrait_box || []);
+      if (portrait) {
+        setProfileImage(portrait);
+        setProfilePreview(URL.createObjectURL(portrait));
+        setProfileMessage("Face cropped automatically from the passport. Review it or choose a different profile photo.");
+      } else {
+        setProfileMessage("Face could not be cropped reliably. Please choose a clear profile photo manually.");
+      }
+      const extraFields = [data.national_id ? "National ID" : "", portrait ? "profile photo" : ""].filter(Boolean);
       if (data.confidence === "low") {
         setScanStatus("error"); setScanMessage("Passport read with low confidence — please double check the auto-filled fields below.");
       } else {
-        setScanStatus("done"); setScanMessage("Auto-filled from passport. Please review before continuing.");
+        setScanStatus("done"); setScanMessage(`Auto-filled from passport${extraFields.length ? `, including ${extraFields.join(" and ")}` : ""}. Please review before continuing.${data.national_id ? "" : " National ID was not printed separately, so enter it manually."}`);
       }
     } catch (err: any) {
       setScanStatus("error"); setScanMessage(err?.message || "Auto-fill failed — please enter your details manually.");
     }
+  }
+  function handleProfileFile(file: File | null) {
+    setProfileImage(file);
+    setProfilePreview(file ? URL.createObjectURL(file) : "");
+    setProfileMessage(file ? "Profile photo selected manually." : "");
+  }
+  function handleEmailUsername(value: string) {
+    setEmailUsername(value);
+    update("email", completeRegistrationEmail(value));
   }
   function appendCommon(data: FormData) {
     Object.entries(form).forEach(([key, value]) => { if (value) data.append(key, value); });
@@ -174,6 +210,8 @@ export default function RegisterPage() {
     setLoading(true); setMessage("Creating your labor account in live SVP…");
     try {
       const data = new FormData(); appendCommon(data);
+      const registrationEmail = completeRegistrationEmail(emailUsername || form.email);
+      data.set("email", registrationEmail);
       if (confirmationId) data.set("confirmation_id", confirmationId);
       // Confirmed from captured traffic: contact_to_confirm is the contact-method
       // enum ("email"), not the actual email address — sending the raw email here
@@ -181,7 +219,7 @@ export default function RegisterPage() {
       data.set("contact_to_confirm", "email"); data.set("preferable_contact", "email");
       data.set("terms_and_privacy_accepted", "true"); data.set("data_accuracy_acknowledged", "true"); data.set("onboarding_video_seen", "false"); data.set("step", "contact_confirmation");
       await apiAuthForm("/registration", data);
-      sessionStorage.setItem("portal_login", form.email); sessionStorage.setItem("portal_password", form.password);
+      sessionStorage.setItem("portal_login", registrationEmail); sessionStorage.setItem("portal_password", form.password);
       setStep(3); setMessage("Registration completed. Continue to login and OTP verification.");
     } catch (err: any) { setMessage(err?.data?.details?.message || err?.message || "Registration failed"); }
     finally { setLoading(false); }
@@ -189,17 +227,17 @@ export default function RegisterPage() {
 
   return <main className="rg-shell"><section className="rg-panel"><header><span>SVP LABOR ONBOARDING</span><h1>Create your accreditation account</h1><p>Live registration, identity validation and OTP handoff through the official SVP APIs.</p></header><div className="rg-progress"><b className={step>=1?"on":""}>1 <small>Identity</small></b><i/><b className={step>=2?"on":""}>2 <small>Account</small></b><i/><b className={step>=3?"on":""}>3 <small>Complete</small></b></div>
     {step===1 && <form onSubmit={validateIdentity} className="rg-form"><h2>Personal & passport information</h2><div className="rg-grid">
-      <label>Country<select required value={form.country_id} onChange={(e)=>{const c=countries.find(x=>String(x.id)===e.target.value);setForm((old)=>({...old,country_id:e.target.value,country_code:c?.code||c?.country_code||"",nationality_id:""}));}}><option value="">Select country</option>{countries.map(c=><option key={c.id} value={c.id}>{c.name||c.english_name}</option>)}</select></label>
+      <label>Country<select required value={form.country_id} onChange={(e)=>{const c=countries.find(x=>String(x.id)===e.target.value);setForm((old)=>({...old,country_id:e.target.value,country_code:resolveCountryDialingCode(c),nationality_id:""}));}}><option value="">Select country</option>{countries.map(c=><option key={c.id} value={c.id}>{c.name||c.english_name}</option>)}</select><small>Bangladesh is selected by default with country code +880.</small></label>
       <label>Nationality<select required disabled={!form.country_id} value={form.nationality_id} onChange={(e)=>update("nationality_id",e.target.value)}><option value="">{form.country_id?"Select nationality":"Select country first"}</option>{nationalities.map(n=><option key={n.id} value={n.id}>{n.english_name||n.arabic_name}</option>)}</select></label>
       <label>First name<input required value={form.first_name} onChange={(e)=>update("first_name",e.target.value)}/></label><label>Last name<input required value={form.last_name} onChange={(e)=>update("last_name",e.target.value)}/></label>
       <label>Date of birth<input required type="date" value={form.date_of_birth} onChange={(e)=>update("date_of_birth",e.target.value)}/></label><label>Sex<select value={form.sex} onChange={(e)=>update("sex",e.target.value)}><option value="male">Male</option><option value="female">Female</option></select></label>
       <label>Passport number<input required value={form.passport_number} onChange={(e)=>update("passport_number",e.target.value)}/></label><label>Passport expiration<input required type="date" value={form.passport_expiration_date} onChange={(e)=>update("passport_expiration_date",e.target.value)}/></label>
-      <label>Passport document<input required type="file" accept="image/*,.pdf" onChange={(e)=>handlePassportFile(e.target.files?.[0]||null)}/><small>Upload a clear photo of your passport's info page — first name, last name, dates, sex and country will auto-fill.</small></label><label>Profile image<input type="file" accept="image/*" onChange={(e)=>setProfileImage(e.target.files?.[0]||null)}/></label>
+      <label>National ID / Personal number<input required value={form.national_id} onChange={(e)=>update("national_id",e.target.value)} placeholder="Auto-filled when printed on the passport"/><small>This is read only when the passport prints a separate personal or National ID number.</small></label>
+      <label>Passport document<input required type="file" accept="image/*,.pdf" onChange={(e)=>handlePassportFile(e.target.files?.[0]||null)}/><small>Upload a clear photo of your passport's info page — identity fields, National ID (when printed), and profile face will auto-fill.</small></label><label>Profile image{profilePreview && <img style={{display:"block",width:112,height:132,margin:"8px 0 10px",borderRadius:12,objectFit:"cover"}} src={profilePreview} alt="Profile preview"/>}<input type="file" accept="image/*" onChange={(e)=>handleProfileFile(e.target.files?.[0]||null)}/><small>{profileMessage || "Your face will be cropped from the passport automatically when detected; you can replace it here."}</small></label>
       {scanStatus!=="idle" && <div className={`rg-wide rg-scan-status rg-scan-${scanStatus}`}>{scanStatus==="scanning"?"⏳ ":scanStatus==="done"?"✓ ":scanStatus==="error"?"⚠ ":""}{scanMessage}</div>}
     </div><button disabled={loading}>{loading?"Validating…":"Validate and continue"}</button></form>}
     {step===2 && <form onSubmit={register} className="rg-form"><h2>Account & professional details</h2><div className="rg-grid">
-      <label>National ID<input required value={form.national_id} onChange={(e)=>update("national_id",e.target.value)} placeholder="Enter your national identity number"/></label>
-      <label>Email<input required type="email" value={form.email} onChange={(e)=>update("email",e.target.value)}/></label>
+      <label>Email username<input required value={emailUsername} onChange={(e)=>handleEmailUsername(e.target.value)} placeholder="abdurrazzak3346"/><small>{completeRegistrationEmail(emailUsername) || "Type a username — @yopmail.com will be added automatically."}</small></label>
       <label>Phone number<input required type="tel" value={form.phone_number} onChange={(e)=>update("phone_number",e.target.value)}/></label>
       <label>Password<input required minLength={8} type="password" value={form.password} onChange={(e)=>update("password",e.target.value)}/></label>
       <label>Confirm password<input required minLength={8} type="password" value={form.password_confirmation} onChange={(e)=>update("password_confirmation",e.target.value)}/>{passwordMismatch && <small className="rg-error">Passwords do not match.</small>}</label>
