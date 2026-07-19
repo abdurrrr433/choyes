@@ -5,7 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 const router = Router();
 
 // ── Config ────────────────────────────────────────────────────────────────
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 const ACCEPTED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
 
