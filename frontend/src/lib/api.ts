@@ -20,6 +20,7 @@ type FunctionKind = "proxy" | "testCenter";
 
 function resolveBackend() {
   if (SUPABASE_URL) {
+    const useRailwayRegistration = Boolean(import.meta.env.VITE_BACKEND_URL);
     return {
       // The proxy verifies the JWT issued by svp-auth.  Never use Railway for
       // authentication while using the Supabase proxy: the two deployments can
@@ -29,6 +30,13 @@ function resolveBackend() {
       authBase: `${SUPABASE_URL}/functions/v1`,
       base: `${SUPABASE_URL}/functions/v1`,
       authPrefix: "/svp-auth",
+      // Registration is public and does not create a local application
+      // session.  When Railway is configured, send its multipart requests
+      // there: SVP rejects the Supabase Edge runtime's HTTP/2 connection for
+      // this endpoint with a stream/protocol error.
+      registrationUsesCookies: useRailwayRegistration,
+      registrationBase: useRailwayRegistration ? RAILWAY_URL : `${SUPABASE_URL}/functions/v1`,
+      registrationPrefix: useRailwayRegistration ? "/api/auth" : "/svp-auth",
       proxyPrefix: (kind: FunctionKind) => (kind === "proxy" ? "/svp-proxy" : "/test-center-owner"),
     };
   }
@@ -37,6 +45,9 @@ function resolveBackend() {
     authBase: RAILWAY_URL,
     base: RAILWAY_URL,
     authPrefix: "/api/auth",
+    registrationUsesCookies: true,
+    registrationBase: RAILWAY_URL,
+    registrationPrefix: "/api/auth",
     // test-center-owner is a Supabase-only feature (see
     // supabase/functions/test-center-owner) — no Railway equivalent exists yet.
     proxyPrefix: (kind: FunctionKind) => (kind === "proxy" ? "/api/svp" : null),
@@ -48,6 +59,9 @@ const {
   authBase: AUTH_BASE,
   base: BASE,
   authPrefix: AUTH_PREFIX,
+  registrationUsesCookies: REGISTRATION_USES_COOKIES,
+  registrationBase: REGISTRATION_BASE,
+  registrationPrefix: REGISTRATION_PREFIX,
   proxyPrefix: PROXY_PREFIX,
 } = resolveBackend();
 
@@ -102,9 +116,9 @@ export async function apiAuth<T = any>(
 }
 
 export async function apiAuthGet<T = any>(action: string): Promise<T> {
-  const { res, data } = await doFetch(`${AUTH_BASE}${AUTH_PREFIX}${action}`, {
+  const { res, data } = await doFetch(`${REGISTRATION_BASE}${REGISTRATION_PREFIX}${action}`, {
     method: "GET",
-    credentials: AUTH_USES_COOKIES ? "include" : "same-origin",
+    credentials: REGISTRATION_USES_COOKIES ? "include" : "same-origin",
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw Object.assign(new Error(data?.message || data?.error || "Request failed"), { status: res.status, data });
@@ -112,9 +126,9 @@ export async function apiAuthGet<T = any>(action: string): Promise<T> {
 }
 
 export async function apiAuthForm<T = any>(action: string, form: FormData): Promise<T> {
-  const res = await fetch(`${AUTH_BASE}${AUTH_PREFIX}${action}`, {
+  const res = await fetch(`${REGISTRATION_BASE}${REGISTRATION_PREFIX}${action}`, {
     method: "POST",
-    credentials: AUTH_USES_COOKIES ? "include" : "same-origin",
+    credentials: REGISTRATION_USES_COOKIES ? "include" : "same-origin",
     body: form,
   });
   const text = await res.text();
