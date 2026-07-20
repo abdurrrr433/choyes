@@ -195,7 +195,15 @@ export default function RegisterPage() {
     if (passportFile) data.set("file", passportFile); if (profileImage) data.set("image", profileImage);
   }
   async function validateIdentity(e: React.FormEvent) {
-    e.preventDefault(); setLoading(true); setMessage("Validating identity with live SVP…");
+    e.preventDefault();
+    // SVP's validation endpoint requires the passport document in the `file`
+    // multipart part.  Sending an empty part (as in the captured request)
+    // produces an opaque upstream validation error, so stop it locally.
+    if (!passportFile || passportFile.size === 0) {
+      setMessage("Upload a non-empty passport document before validating your identity.");
+      return;
+    }
+    setLoading(true); setMessage("Validating identity with live SVP…");
     try {
       const data = new FormData(); appendCommon(data); data.set("step", "passport_info");
       const result = await apiAuthForm<any>("/registration/validate", data);
@@ -233,7 +241,7 @@ export default function RegisterPage() {
       <label>Date of birth<input required type="date" value={form.date_of_birth} onChange={(e)=>update("date_of_birth",e.target.value)}/></label><label>Sex<select value={form.sex} onChange={(e)=>update("sex",e.target.value)}><option value="male">Male</option><option value="female">Female</option></select></label>
       <label>Passport number<input required value={form.passport_number} onChange={(e)=>update("passport_number",e.target.value)}/></label><label>Passport expiration<input required type="date" value={form.passport_expiration_date} onChange={(e)=>update("passport_expiration_date",e.target.value)}/></label>
       <label>National ID / Personal number<input required value={form.national_id} onChange={(e)=>update("national_id",e.target.value)} placeholder="Auto-filled only from this passport"/><small>Passport source only. No separate NID document is scanned.</small></label>
-      <label>Passport document<input required type="file" accept="image/*,.pdf" onChange={(e)=>handlePassportFile(e.target.files?.[0]||null)}/><small>Upload a clear passport info page — passport fields, its printed National ID, and profile face will auto-fill.</small></label><label>Profile image{profilePreview && <img style={{display:"block",width:112,height:132,margin:"8px 0 10px",borderRadius:12,objectFit:"cover"}} src={profilePreview} alt="Profile preview"/>}<input type="file" accept="image/*" onChange={(e)=>handleProfileFile(e.target.files?.[0]||null)}/><small>{profileMessage || "Your face will be cropped from the passport automatically when detected; you can replace it here."}</small></label>
+      <label>Passport document<input required type="file" accept="image/*,.pdf" onChange={(e)=>handlePassportFile(e.target.files?.[0]||null)}/><small>Required. Upload a clear, non-empty passport info page — passport fields, its printed National ID, and profile face will auto-fill.</small></label><label>Profile image{profilePreview && <img style={{display:"block",width:112,height:132,margin:"8px 0 10px",borderRadius:12,objectFit:"cover"}} src={profilePreview} alt="Profile preview"/>}<input type="file" accept="image/*" onChange={(e)=>handleProfileFile(e.target.files?.[0]||null)}/><small>{profileMessage || "Your face will be cropped from the passport automatically when detected; you can replace it here."}</small></label>
       {scanStatus!=="idle" && <div className={`rg-wide rg-scan-status rg-scan-${scanStatus}`}>{scanStatus==="scanning"?"⏳ ":scanStatus==="done"?"✓ ":scanStatus==="error"?"⚠ ":""}{scanMessage}</div>}
     </div><button disabled={loading}>{loading?"Validating…":"Validate and continue"}</button></form>}
     {step===2 && <form onSubmit={register} className="rg-form"><h2>Account & professional details</h2><div className="rg-grid">
