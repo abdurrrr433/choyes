@@ -20,12 +20,15 @@ type FunctionKind = "proxy" | "testCenter";
 
 function resolveBackend() {
   if (SUPABASE_URL) {
-    const useRailwayAuth = Boolean(import.meta.env.VITE_BACKEND_URL);
     return {
-      authUsesCookies: useRailwayAuth,
-      authBase: useRailwayAuth ? RAILWAY_URL : `${SUPABASE_URL}/functions/v1`,
+      // The proxy verifies the JWT issued by svp-auth.  Never use Railway for
+      // authentication while using the Supabase proxy: the two deployments can
+      // have different JWT_ACCESS_SECRET values, which makes every proxy call
+      // fail with "Invalid signature".
+      authUsesCookies: false,
+      authBase: `${SUPABASE_URL}/functions/v1`,
       base: `${SUPABASE_URL}/functions/v1`,
-      authPrefix: useRailwayAuth ? "/api/auth" : "/svp-auth",
+      authPrefix: "/svp-auth",
       proxyPrefix: (kind: FunctionKind) => (kind === "proxy" ? "/svp-proxy" : "/test-center-owner"),
     };
   }
