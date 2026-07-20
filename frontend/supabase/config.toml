@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.svp-proxy]
 verify_jwt = false
+
+[functions.svp-auth]
+verify_jwt = false
+
+[functions.test-center-owner]
+verify_jwt = false
