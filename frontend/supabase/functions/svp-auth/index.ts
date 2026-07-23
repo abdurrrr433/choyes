@@ -38,6 +38,7 @@ async function svpRequest(
     Origin: SVP_ORIGIN,
     Referer: `${SVP_ORIGIN}/`,
     "User-Agent": SVP_UA,
+    "X-Tenant-Name": "svp-international",
   };
   if (opts.body) headers["Content-Type"] = "application/json;charset=UTF-8";
   if (opts.token) headers["Authorization"] = `Bearer ${opts.token}`;
@@ -231,6 +232,30 @@ Deno.serve(async (req) => {
     const countryMatch = path.match(/^\/registration\/countries\/([^/]+)$/);
     if (req.method === "GET" && countryMatch) {
       return json(await svpRequest(`/api/v1/visitor_space/countries/${encodeURIComponent(countryMatch[1])}`));
+    }
+    if (req.method === "GET" && path === "/registration/occupations") {
+      const u = new URL(req.url);
+      const per_page = u.searchParams.get("per_page") || "1000";
+      const page = u.searchParams.get("page") || "1";
+      const name = u.searchParams.get("name") || "";
+      const arabicName = u.searchParams.get("arabic_name") || "";
+      const locale = u.searchParams.get("locale") || "en";
+      const qs = new URLSearchParams({ per_page, page, locale });
+      if (name) qs.set("name", name);
+      if (arabicName) qs.set("arabic_name", arabicName);
+      return json(await svpRequest(`/api/v1/visitor_space/occupations?${qs.toString()}`));
+    }
+    if (req.method === "GET" && path === "/registration/labors") {
+      const u = new URL(req.url);
+      const passportNumber = u.searchParams.get("passport_number") || "";
+      const occupationKey = u.searchParams.get("occupation_key") || "";
+      const nationalityId = u.searchParams.get("nationality_id") || "";
+      const locale = u.searchParams.get("locale") || "en";
+      const qs = new URLSearchParams({ locale });
+      if (passportNumber) qs.set("passport_number", passportNumber);
+      if (occupationKey) qs.set("occupation_key", occupationKey);
+      if (nationalityId) qs.set("nationality_id", nationalityId);
+      return json(await svpRequest(`/api/v1/visitor_space/labors?${qs.toString()}`));
     }
 
     // SVP registration uses multipart/form-data (including passport/image files).

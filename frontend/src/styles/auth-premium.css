@@ -547,6 +547,131 @@
   .ap-field select,
   .ap-field textarea { min-height: 46px; font-size: 14px; }
   .ap-otp-back { margin-bottom: 18px; }
+
+/* ==========================================================================
+   OCCUPATION SEARCH — inside /auth/login right panel
+   ========================================================================== */
+.ap-occ-section {
+  padding: 16px 18px;
+  margin: 0 0 18px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ap-glass-border);
+}
+.ap-occ-title {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ap-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.ap-occ-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--ap-muted);
+}
+.ap-occ-search .ap-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ap-muted);
+  margin-bottom: 4px;
+}
+.ap-occ-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ap-occ-input-wrap input {
+  width: 100%;
+  padding: 8px 32px 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ap-glass-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ap-text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.ap-occ-input-wrap input::placeholder { color: rgba(147, 160, 196, 0.6); }
+.ap-occ-input-wrap input:focus { border-color: var(--ap-gold); }
+.ap-occ-spinner {
+  position: absolute;
+  right: 8px;
+  font-size: 13px;
+  animation: ap-spin 0.8s linear infinite;
+}
+.ap-occ-clear {
+  position: absolute;
+  right: 6px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--ap-muted);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.ap-occ-clear:hover { background: rgba(248, 113, 113, 0.3); color: var(--ap-danger); }
+.ap-occ-badge {
+  margin-top: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(240, 200, 105, 0.12);
+  border: 1px solid rgba(240, 200, 105, 0.3);
+  font-size: 12px;
+  color: var(--ap-gold);
+}
+.ap-occ-badge code {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 11px;
+  color: var(--ap-text);
+}
+.ap-occ-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 1px solid var(--ap-glass-border);
+  background: rgba(7, 11, 26, 0.7);
+}
+.ap-occ-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.12s;
+}
+.ap-occ-item:last-child { border-bottom: none; }
+.ap-occ-item:hover { background: rgba(240, 200, 105, 0.08); }
+.ap-occ-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--ap-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ap-occ-key {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(59, 92, 219, 0.2);
+  color: #93a0c4;
+}
   .ap-otp-icon { width: 50px; height: 50px; margin-bottom: 16px; border-radius: 15px; }
   .ap-otp-account { align-items: flex-start; }
   .ap-otp-field input { min-height: 54px; font-size: 19px; }

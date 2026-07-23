@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
-import { apiAuth } from "@/lib/api";
+import { apiAuth, apiAuthGet } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { getPendingAuth, setPendingAuth } from "@/lib/pending-auth";
 import "@/styles/auth-premium.css";
@@ -22,6 +22,14 @@ export default function LoginPage() {
   const [tokenMsgType, setTokenMsgType] = useState<"info" | "ok" | "error">("info");
   const [tokenSubmitting, setTokenSubmitting] = useState(false);
 
+  const [occQuery, setOccQuery] = useState("");
+  const [occResults, setOccResults] = useState<any[]>([]);
+  const [occLoading, setOccLoading] = useState(false);
+  const [occSelected, setOccSelected] = useState<{ occupation_key: string; name: string } | null>(null);
+  const [occError, setOccError] = useState("");
+  const occTimer = useRef<ReturnType<typeof setTimeout>>();
+  const occAbort = useRef(false);
+
   const navigate = useNavigate();
   const { login: authLogin } = useAuth();
 
@@ -41,6 +49,48 @@ export default function LoginPage() {
     if (pending?.otpMethod) setOtpMethod(pending.otpMethod);
     if (pending?.login) setTokenLogin(pending.login);
   }, []);
+
+  // Restore previously selected occupation from sessionStorage
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("selected_occupation");
+      if (saved) setOccSelected(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, []);
+
+  const searchOccupations = useCallback(async (query: string) => {
+    if (occAbort.current) return;
+    occAbort.current = false;
+    setOccLoading(true);
+    setOccError("");
+    try {
+      const qs = encodeURIComponent(query.trim());
+      const data = await apiAuthGet<any>(`/registration/occupations?per_page=1000&name=contains::${qs}`);
+      const list = Array.isArray(data) ? data : (data?.data ?? data?.occupations ?? []);
+      setOccResults(list);
+    } catch (err: any) {
+      if (!occAbort.current) setOccError(err?.message || "Failed to load occupations");
+    } finally {
+      if (!occAbort.current) setOccLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (occTimer.current) clearTimeout(occTimer.current);
+    const q = occQuery.trim();
+    if (q.length < 2) { setOccResults([]); setOccError(""); return; }
+    occTimer.current = setTimeout(() => searchOccupations(q), 350);
+    return () => { if (occTimer.current) clearTimeout(occTimer.current); };
+  }, [occQuery, searchOccupations]);
+
+  function handleOccSelect(occ: any) {
+    const key = String(occ.occupation_key || occ.occupationKey || occ.id || "");
+    const name = String(occ.name || occ.english_name || occ.label || key);
+    setOccSelected({ occupation_key: key, name });
+    sessionStorage.setItem("selected_occupation", JSON.stringify({ occupation_key: key, name }));
+    setOccResults([]);
+    setOccQuery("");
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -135,6 +185,52 @@ export default function LoginPage() {
       {/* Right – Form */}
       <section className="ap-form-panel">
         <div className="ap-form-card">
+
+          {/* ── Occupation search section ───────────────────────────── */}
+          <div className="ap-occ-section">
+            <h3 className="ap-occ-title">🔍 Find Occupation</h3>
+            <p className="ap-occ-hint">Search and select your SVP occupation — used for result verification.</p>
+            <div className="ap-field ap-occ-search">
+              <label htmlFor="occ-search">Occupation name</label>
+              <div className="ap-occ-input-wrap">
+                <input
+                  id="occ-search"
+                  type="text"
+                  value={occQuery}
+                  onChange={(e) => setOccQuery(e.target.value)}
+                  placeholder="Type to search occupations…"
+                  autoComplete="off"
+                />
+                {occLoading && <span className="ap-occ-spinner">⏳</span>}
+                {occSelected && !occQuery && (
+                  <button type="button" className="ap-occ-clear" onClick={() => { setOccSelected(null); sessionStorage.removeItem("selected_occupation"); }}>
+                    ✕
+                  </button>
+                )}
+              </div>
+              {occSelected && (
+                <div className="ap-occ-badge">
+                  Selected: <strong>{occSelected.name}</strong> <code>{occSelected.occupation_key}</code>
+                </div>
+              )}
+              {occError && <div className="ap-message ap-message--error">{occError}</div>}
+              {occResults.length > 0 && (
+                <ul className="ap-occ-list">
+                  {occResults.slice(0, 20).map((occ, i) => {
+                    const key = String(occ.occupation_key || occ.occupationKey || occ.id || "");
+                    const name = String(occ.name || occ.english_name || occ.label || key);
+                    return (
+                      <li key={`${key}-${i}`} className="ap-occ-item" onClick={() => handleOccSelect(occ)}>
+                        <span className="ap-occ-name">{name}</span>
+                        <code className="ap-occ-key">{key}</code>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+
           <div className="ap-form-header">
             <h1>Welcome back</h1>
             <p>Sign in with your SVP account. Choose OTP or bearer-token verification below.</p>

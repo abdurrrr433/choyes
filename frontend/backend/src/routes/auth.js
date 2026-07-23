@@ -152,6 +152,37 @@ router.get('/registration/countries', async (_req, res, next) => {
   }
 });
 
+router.get('/registration/occupations', async (req, res, next) => {
+  try {
+    const { per_page = '1000', page = '1', name = '', arabic_name = '', locale = 'en' } = req.query;
+    const qs = new URLSearchParams({ per_page, page, locale });
+    if (name) qs.set('name', `contains::${name}`);
+    if (arabic_name) qs.set('arabic_name', arabic_name);
+    const data = await svpRequest(`/api/v1/visitor_space/occupations?${qs.toString()}`, {
+      headers: { 'X-Tenant-Name': 'svp-international' },
+    });
+    res.json(data);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/registration/labors', async (req, res, next) => {
+  try {
+    const { passport_number, occupation_key, nationality_id, locale = 'en' } = req.query;
+    const qs = new URLSearchParams({ locale });
+    if (passport_number) qs.set('passport_number', String(passport_number));
+    if (occupation_key) qs.set('occupation_key', String(occupation_key));
+    if (nationality_id) qs.set('nationality_id', String(nationality_id));
+    const data = await svpRequest(`/api/v1/visitor_space/labors?${qs.toString()}`, {
+      headers: { 'X-Tenant-Name': 'svp-international' },
+    });
+    res.json(data);
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/registration/countries/:countryId', async (req, res, next) => {
   try {
     const countryId = encodeURIComponent(String(req.params.countryId));

@@ -20,6 +20,7 @@ export async function svpRequest(path, { method='GET', token, body } = {}) {
     'Origin': svpOrigin,
     'Referer': svpReferer,
     'User-Agent': svpUserAgent,
+    'X-Tenant-Name': 'svp-international',
   };
   if (body) headers['Content-Type'] = 'application/json;charset=UTF-8';
   if (token) headers['Authorization'] = `Bearer ${token}`;
