@@ -28,17 +28,10 @@ export default function AccessLoginPage() {
     setMsg("");
     try {
       await login(email, password);
-      const user = JSON.parse(localStorage.getItem("access_user") || "{}");
-      if (user.role === "ADMIN" || user.role === "AGENCY") {
-        setMsg("Login successful. Redirecting to dashboard…");
-        setMsgType("ok");
-        navigate("/access/dashboard");
-      } else {
-        sessionStorage.setItem("portal_login", email);
-        setMsg("Login successful. Redirecting to SVP verification…");
-        setMsgType("ok");
-        navigate("/auth/login");
-      }
+      sessionStorage.setItem("portal_login", email);
+      setMsg("Login successful. Redirecting to SVP verification…");
+      setMsgType("ok");
+      navigate("/auth/login");
     } catch (error: unknown) {
       const value = error as { message?: string; data?: { message?: unknown } };
       const detail = value.data?.message || value.message || "Login failed";

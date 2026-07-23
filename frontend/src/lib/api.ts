@@ -103,7 +103,10 @@ export async function apiAuth<T = any>(
   const { res, data } = await doFetch(`${AUTH_BASE}${AUTH_PREFIX}${action}`, {
     method: "POST",
     credentials: AUTH_USES_COOKIES ? "include" : "same-origin",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(localStorage.getItem("access_token") ? { "X-Access-Token": localStorage.getItem("access_token")! } : {}),
+    },
     body: JSON.stringify(body),
   });
 

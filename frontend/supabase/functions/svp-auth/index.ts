@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-access-token, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
@@ -67,7 +67,7 @@ async function svpMultipartRequest(path: string, body: FormData) {
   const url = `${SVP_BASE}${path}${path.includes("?") ? "&" : "?"}locale=${SVP_LOCALE}`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { Accept: "application/json", Origin: SVP_ORIGIN, Referer: `${SVP_ORIGIN}/`, "User-Agent": SVP_UA },
+    headers: { Accept: "application/json", Origin: SVP_ORIGIN, Referer: `${SVP_ORIGIN}/`, "User-Agent": SVP_UA, "X-Tenant-Name": "svp-international" },
     body,
   });
   const text = await res.text();
@@ -160,6 +160,20 @@ async function verifyJwt(token: string, secret: string): Promise<Record<string, 
   return claims;
 }
 
+async function requireActivePortalAccount(req: Request) {
+  const token = req.headers.get("x-access-token")?.trim();
+  if (!token) throw { statusCode: 401, message: "Access Portal login is required" };
+  const secret = Deno.env.get("JWT_ACCESS_SECRET") || "";
+  if (!secret) throw { statusCode: 500, message: "Access Portal authentication is not configured" };
+  let claims: Record<string, unknown>;
+  try { claims = await verifyJwt(token, secret); }
+  catch { throw { statusCode: 401, message: "Access Portal session has expired" }; }
+  const accountId = String(claims.sub || "");
+  const { data: account } = await getSupabase().from("accounts").select("id,status").eq("id", accountId).single();
+  if (!account || account.status !== "ACTIVE") throw { statusCode: 403, message: "An active Access Portal account is required" };
+  return account;
+}
+
 function randomToken(bytes = 32): string {
   const buf = crypto.getRandomValues(new Uint8Array(bytes));
   return btoa(String.fromCharCode(...buf)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
@@ -245,17 +259,18 @@ Deno.serve(async (req) => {
       if (arabicName) qs.set("arabic_name", arabicName);
       return json(await svpRequest(`/api/v1/visitor_space/occupations?${qs.toString()}`));
     }
-    if (req.method === "GET" && path === "/registration/labors") {
-      const u = new URL(req.url);
-      const passportNumber = u.searchParams.get("passport_number") || "";
-      const occupationKey = u.searchParams.get("occupation_key") || "";
-      const nationalityId = u.searchParams.get("nationality_id") || "";
-      const locale = u.searchParams.get("locale") || "en";
-      const qs = new URLSearchParams({ locale });
-      if (passportNumber) qs.set("passport_number", passportNumber);
-      if (occupationKey) qs.set("occupation_key", occupationKey);
-      if (nationalityId) qs.set("nationality_id", nationalityId);
-      return json(await svpRequest(`/api/v1/visitor_space/labors?${qs.toString()}`));
+    if (req.method === "POST" && path === "/result-verification") {
+      await requireActivePortalAccount(req);
+      const input = await req.json().catch(() => ({}));
+      const passportNumber = String(input.passportNumber || "").trim().toUpperCase().replace(/\s+/g, "");
+      const occupationKey = String(input.occupationKey || "").trim();
+      const nationalityId = String(input.nationalityId || "").trim().toUpperCase();
+      if (!/^[A-Z0-9]{5,20}$/.test(passportNumber)) throw { statusCode: 400, message: "Enter a valid passport number" };
+      if (!/^\d{1,12}$/.test(occupationKey)) throw { statusCode: 400, message: "Select a valid occupation" };
+      if (!/^[A-Z]{3}$/.test(nationalityId)) throw { statusCode: 400, message: "Select a valid nationality" };
+      const qs = new URLSearchParams({ passport_number: passportNumber, occupation_key: occupationKey, nationality_id: nationalityId, locale: "en" });
+      const result = await svpRequest(`/api/v1/visitor_space/labors?${qs.toString()}`);
+      return new Response(JSON.stringify({ result }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
 
     // SVP registration uses multipart/form-data (including passport/image files).

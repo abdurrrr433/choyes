@@ -5,6 +5,7 @@ import { apiAuth, apiAuthGet } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { getPendingAuth, setPendingAuth } from "@/lib/pending-auth";
 import "@/styles/auth-premium.css";
+import "@/styles/login-verification.css";
 
 export default function LoginPage() {
   const [login, setLogin] = useState("");
@@ -29,6 +30,11 @@ export default function LoginPage() {
   const [occError, setOccError] = useState("");
   const occTimer = useRef<ReturnType<typeof setTimeout>>();
   const occAbort = useRef(false);
+  const [passportNumber, setPassportNumber] = useState("");
+  const [nationality, setNationality] = useState("BGD");
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
+  const [verifyResult, setVerifyResult] = useState<any>(null);
 
   const navigate = useNavigate();
   const { login: authLogin } = useAuth();
@@ -92,6 +98,35 @@ export default function LoginPage() {
     setOccQuery("");
   }
 
+  function findValue(value: any, names: string[]): string {
+    const queue = [value];
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object") continue;
+      for (const [key, item] of Object.entries(current)) {
+        if (names.includes(key) && item != null && item !== "") return String(item);
+        if (item && typeof item === "object") queue.push(item);
+      }
+    }
+    return "";
+  }
+
+  async function verifyApplicant(event: React.FormEvent) {
+    event.preventDefault();
+    if (!occSelected) { setVerifyError("Search for and select an occupation first."); return; }
+    setVerifyLoading(true); setVerifyError(""); setVerifyResult(null);
+    try {
+      const response = await apiAuth<any>("/result-verification", {
+        passportNumber,
+        occupationKey: occSelected.occupation_key,
+        nationalityId: nationality,
+      });
+      setVerifyResult(response.result ?? response);
+    } catch (err: any) {
+      setVerifyError(err?.data?.message || err?.message || "Could not verify this applicant.");
+    } finally { setVerifyLoading(false); }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     openYopmailInbox(login);
@@ -135,7 +170,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="ap-shell">
+    <main className="ap-shell ap-login-shell">
       {/* Left – Brand showcase */}
       <aside className="ap-brand-panel">
         <div className="ap-brand-head">
@@ -182,55 +217,9 @@ export default function LoginPage() {
         </div>
       </aside>
 
-      {/* Right – Form */}
+      {/* Centre – SVP sign in */}
       <section className="ap-form-panel">
         <div className="ap-form-card">
-
-          {/* ── Occupation search section ───────────────────────────── */}
-          <div className="ap-occ-section">
-            <h3 className="ap-occ-title">🔍 Find Occupation</h3>
-            <p className="ap-occ-hint">Search and select your SVP occupation — used for result verification.</p>
-            <div className="ap-field ap-occ-search">
-              <label htmlFor="occ-search">Occupation name</label>
-              <div className="ap-occ-input-wrap">
-                <input
-                  id="occ-search"
-                  type="text"
-                  value={occQuery}
-                  onChange={(e) => setOccQuery(e.target.value)}
-                  placeholder="Type to search occupations…"
-                  autoComplete="off"
-                />
-                {occLoading && <span className="ap-occ-spinner">⏳</span>}
-                {occSelected && !occQuery && (
-                  <button type="button" className="ap-occ-clear" onClick={() => { setOccSelected(null); sessionStorage.removeItem("selected_occupation"); }}>
-                    ✕
-                  </button>
-                )}
-              </div>
-              {occSelected && (
-                <div className="ap-occ-badge">
-                  Selected: <strong>{occSelected.name}</strong> <code>{occSelected.occupation_key}</code>
-                </div>
-              )}
-              {occError && <div className="ap-message ap-message--error">{occError}</div>}
-              {occResults.length > 0 && (
-                <ul className="ap-occ-list">
-                  {occResults.slice(0, 20).map((occ, i) => {
-                    const key = String(occ.occupation_key || occ.occupationKey || occ.id || "");
-                    const name = String(occ.name || occ.english_name || occ.label || key);
-                    return (
-                      <li key={`${key}-${i}`} className="ap-occ-item" onClick={() => handleOccSelect(occ)}>
-                        <span className="ap-occ-name">{name}</span>
-                        <code className="ap-occ-key">{key}</code>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </div>
-
           <div className="ap-form-header">
             <h1>Welcome back</h1>
             <p>Sign in with your SVP account. Choose OTP or bearer-token verification below.</p>
@@ -333,6 +322,23 @@ export default function LoginPage() {
           )}
         </div>
       </section>
+
+      {/* Right – applicant result verification */}
+      <aside className="ap-verify-panel">
+        <div className="ap-verify-card">
+          <div className="ap-verify-header"><span>SVP LIVE</span><h2>Verify Applicant Result</h2><p>Enter the applicant details and select an occupation to check the current result.</p></div>
+          <form className="ap-verify-form" onSubmit={verifyApplicant}>
+            <label>Passport No. <b>*</b><input value={passportNumber} onChange={(e) => setPassportNumber(e.target.value.toUpperCase())} placeholder="Passport number" autoComplete="off" required /></label>
+            <label>Nationality <b>*</b><select value={nationality} onChange={(e) => setNationality(e.target.value)}><option value="BGD">Bangladesh (BGD)</option><option value="IND">India (IND)</option><option value="PAK">Pakistan (PAK)</option><option value="NPL">Nepal (NPL)</option><option value="PHL">Philippines (PHL)</option></select></label>
+            <label>Occupation <b>*</b><div className="ap-occ-input-wrap"><input id="occ-search" type="text" value={occQuery} onChange={(e) => setOccQuery(e.target.value)} placeholder={occSelected ? occSelected.name : "Search occupation name"} autoComplete="off" required={!occSelected} />{occLoading && <span className="ap-occ-spinner">⌛</span>}{occSelected && !occQuery && <button type="button" className="ap-occ-clear" aria-label="Clear selected occupation" onClick={() => { setOccSelected(null); sessionStorage.removeItem("selected_occupation"); }}>×</button>}</div></label>
+            {occError && <div className="ap-message ap-message--error">{occError}</div>}
+            {occSelected && <div className="ap-occ-badge"><strong>{occSelected.name}</strong><code>{occSelected.occupation_key}</code></div>}
+            {occResults.length > 0 && <ul className="ap-occ-list">{occResults.slice(0, 20).map((occ, i) => { const key = String(occ.occupation_key || occ.occupationKey || occ.id || ""); const name = String(occ.name || occ.english_name || occ.label || key); return <li key={`${key}-${i}`} className="ap-occ-item" onClick={() => handleOccSelect(occ)}><span className="ap-occ-name">{name}</span><code className="ap-occ-key">{key}</code></li>; })}</ul>}
+            <button className="ap-verify-submit" type="submit" disabled={verifyLoading}>{verifyLoading ? "Verifying…" : "Verify  →"}</button>
+          </form>
+          <section className="ap-result-box" aria-live="polite"><h3>Verification Result</h3>{verifyError ? <p className="ap-result-error">{verifyError}</p> : !verifyResult ? <p className="ap-result-empty">Complete the form to view the live result.</p> : <><div className="ap-result-status">✓ <strong>{findValue(verifyResult, ["message", "status", "result"]) || "Result received"}</strong></div><dl><div><dt>Applicant Name</dt><dd>{findValue(verifyResult, ["full_name", "name", "applicant_name"]) || "—"}</dd></div><div><dt>Passport No.</dt><dd>{findValue(verifyResult, ["passport_number"]) || passportNumber}</dd></div><div><dt>Occupation</dt><dd>{occSelected?.name}</dd></div><div><dt>Test Date</dt><dd>{findValue(verifyResult, ["test_date", "exam_date", "date"]) || "—"}</dd></div></dl></>}</section>
+        </div>
+      </aside>
     </main>
   );
 }
