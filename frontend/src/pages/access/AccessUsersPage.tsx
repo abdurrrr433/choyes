@@ -9,6 +9,7 @@ const AGENCY_USER_PERMISSIONS = [
   ["reservation.manage", "Manage reservations", "Open My bookings, download tickets, cancel and reschedule."],
   ["payment.create", "Create payments", "Start or retry reservation payments."],
   ["wallet.deposit", "Request deposits", "Submit wallet deposit requests for admin approval."],
+  ["session.lookup", "Look up exam sessions by number", "Fetch an exam session's live details (and encrypted exam_session_id token) by its numeric session number."],
 ] as const;
 
 interface AgencyWalletTransaction {

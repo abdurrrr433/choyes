@@ -608,6 +608,12 @@ Deno.serve(async (req) => {
         (req.method === "GET" && /^\/exam-reservations(?:\/[^/]+)?$/.test(path)) ||
         (req.method === "DELETE" && /^\/exam-reservations\/[^/]+$/.test(path)) ||
         isBookingReschedule;
+      // Looking up a single exam session by its numeric session number returns the
+      // live encrypted exam_session_id token (usable for /temporary-seats holds),
+      // so it's gated the same way as the other sensitive actions — admin must
+      // explicitly grant "session.lookup" per account.
+      const isSessionLookup =
+        req.method === "GET" && /^\/exam-sessions?\/[^/]+$/.test(path);
       let accessContext: Awaited<ReturnType<typeof requireAccessPermission>> | null = null;
       let walletHoldId = "";
       let bookingCreditCost = 0;
@@ -618,6 +624,8 @@ Deno.serve(async (req) => {
         accessContext = await requireAccessPermission(req, "booking.create");
       } else if (isPaymentCreate) {
         accessContext = await requireAccessPermission(req, "payment.create");
+      } else if (isSessionLookup) {
+        accessContext = await requireAccessPermission(req, "session.lookup");
       }
 
       if (isChargeableBooking && accessContext?.account.permission_mode === "MANAGED") {
