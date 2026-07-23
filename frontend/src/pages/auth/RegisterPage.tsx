@@ -1,19 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiAuthForm, apiAuthGet } from "@/lib/api";
 import { cropPassportPortrait, scanPassport, isSupportedPassportImage, type PassportScanData } from "@/lib/passport-scan-client";
 import { completeRegistrationEmail, resolveCountryDialingCode, toApiDate } from "@/lib/registration-payload";
 import "@/styles/registration-premium.css";
 
-// The recaptcha_response the live SVP API expects is a real Google reCAPTCHA
-// token (~2000+ chars) issued to the *pacc.sa* domain's site key. A widget
-// embedded on this app's own domain cannot legally mint that token — Google
-// validates the requesting origin against the site key's registered domains.
-// Until/unless SVP allowlists this domain (or a same-origin proxy is set up),
-// the only way to get a valid token is to complete the real reCAPTCHA on the
-// official SVP registration page and paste the token here within ~2 minutes
-// before it expires.
-const RECAPTCHA_HELP = "Open https://svp-international.pacc.sa/auth/register in another tab, open DevTools → Network, fill the form there, and copy the 'recaptcha_response' value from the request right before submitting there — then paste it here immediately (tokens expire in ~2 minutes) and submit this form.";
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined;
+
+type RecaptchaApi = {
+  render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; "expired-callback": () => void; "error-callback": () => void }) => number;
+  reset: (widgetId?: number) => void;
+};
+
+declare global {
+  interface Window { grecaptcha?: RecaptchaApi; }
+}
 
 function pickArray(payload: any): any[] {
   for (const value of [payload, payload?.data, payload?.countries, payload?.data?.countries, payload?.items]) if (Array.isArray(value)) return value;
@@ -80,6 +81,10 @@ export default function RegisterPage() {
   const [scanStatus, setScanStatus] = useState<"idle" | "scanning" | "done" | "error">("idle");
   const [scanMessage, setScanMessage] = useState("");
   const [pendingNationalityCode, setPendingNationalityCode] = useState("");
+  const [recaptchaReady, setRecaptchaReady] = useState(false);
+  const [recaptchaError, setRecaptchaError] = useState("");
+  const recaptchaHost = useRef<HTMLDivElement | null>(null);
+  const recaptchaWidgetId = useRef<number | null>(null);
   const selectedCountry = useMemo(() => countries.find((item) => String(item.id) === form.country_id), [countries, form.country_id]);
   const selectedKnowledge = useMemo(() => new Set(form.knowledge_level ? form.knowledge_level.split(",") : []), [form.knowledge_level]);
   const passwordMismatch = form.password_confirmation.length > 0 && form.password !== form.password_confirmation;
@@ -121,6 +126,36 @@ export default function RegisterPage() {
       .catch((err) => { setNationalities([]); setMessage(err.message); });
   }, [form.country_id]);
   useEffect(() => () => { if (profilePreview) URL.revokeObjectURL(profilePreview); }, [profilePreview]);
+  useEffect(() => {
+    if (!RECAPTCHA_SITE_KEY) return;
+    if (window.grecaptcha) { setRecaptchaReady(true); return; }
+    const existing = document.querySelector<HTMLScriptElement>('script[data-recaptcha-api="true"]');
+    const onLoad = () => setRecaptchaReady(true);
+    const onError = () => setRecaptchaError("Google reCAPTCHA could not be loaded. Check your connection and disable blockers for this page.");
+    if (existing) {
+      existing.addEventListener("load", onLoad);
+      existing.addEventListener("error", onError);
+      return () => { existing.removeEventListener("load", onLoad); existing.removeEventListener("error", onError); };
+    }
+    const script = document.createElement("script");
+    script.src = "https://www.google.com/recaptcha/api.js?render=explicit";
+    script.async = true; script.defer = true; script.dataset.recaptchaApi = "true";
+    script.addEventListener("load", onLoad); script.addEventListener("error", onError);
+    document.head.appendChild(script);
+    return () => { script.removeEventListener("load", onLoad); script.removeEventListener("error", onError); };
+  }, []);
+  useEffect(() => {
+    if (step !== 2) recaptchaWidgetId.current = null;
+  }, [step]);
+  useEffect(() => {
+    if (step !== 2 || !recaptchaReady || !RECAPTCHA_SITE_KEY || !window.grecaptcha || !recaptchaHost.current || recaptchaWidgetId.current !== null) return;
+    recaptchaWidgetId.current = window.grecaptcha.render(recaptchaHost.current, {
+      sitekey: RECAPTCHA_SITE_KEY,
+      callback: (token) => { update("recaptcha_response", token); setRecaptchaError(""); },
+      "expired-callback": () => { update("recaptcha_response", ""); setRecaptchaError("The reCAPTCHA check expired. Please complete it again."); },
+      "error-callback": () => { update("recaptcha_response", ""); setRecaptchaError("reCAPTCHA could not verify your response. Please try again."); },
+    });
+  }, [step, recaptchaReady]);
   function update(key: string, value: string) { setForm((old) => ({ ...old, [key]: value })); }
   function toggleKnowledge(value: string) {
     setForm((old) => {
@@ -215,6 +250,8 @@ export default function RegisterPage() {
   async function register(e: React.FormEvent) {
     e.preventDefault();
     if (form.password !== form.password_confirmation) { setMessage("Passwords do not match."); return; }
+    if (!RECAPTCHA_SITE_KEY) { setMessage("Registration is unavailable because reCAPTCHA has not been configured for this site."); return; }
+    if (!form.recaptcha_response) { setMessage("Complete the reCAPTCHA check before registering."); return; }
     setLoading(true); setMessage("Creating your labor account in live SVP…");
     try {
       const data = new FormData(); appendCommon(data);
@@ -254,8 +291,8 @@ export default function RegisterPage() {
       <label>Experience level<select required value={form.experience_level} onChange={(e)=>update("experience_level",e.target.value)}>{EXPERIENCE_LEVELS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
       <label className="rg-wide">Knowledge level<div className="rg-checkgroup">{KNOWLEDGE_LEVELS.map(o=><label key={o.value} className="rg-checkbox"><input type="checkbox" checked={selectedKnowledge.has(o.value)} onChange={()=>toggleKnowledge(o.value)}/>{o.label}</label>)}</div></label>
       <label>Institute name<input required value={form.institute_name} onChange={(e)=>update("institute_name",e.target.value)}/><small>Confirmed from live traffic: SVP expects the fixed government labor bureau name here, not a personal institute — only change this if you know your case is different.</small></label>
-      <label className="rg-wide">reCAPTCHA response (required by SVP)<textarea required rows={3} placeholder="Paste the recaptcha_response token here" value={form.recaptcha_response} onChange={(e)=>update("recaptcha_response",e.target.value)}/><small>This can't be auto-generated from this app's own domain — Google's reCAPTCHA only issues tokens to the domain a site key is registered for (svp-international.pacc.sa). {RECAPTCHA_HELP}</small></label>
-    </div><div className="rg-actions"><button type="button" onClick={()=>setStep(1)}>Back</button><button disabled={loading || passwordMismatch}>{loading?"Creating…":"Complete registration"}</button></div></form>}
+      <div className="rg-wide"><label>Security verification (required by SVP)</label>{RECAPTCHA_SITE_KEY ? <><div ref={recaptchaHost}/>{!recaptchaReady && !recaptchaError && <small>Loading reCAPTCHA…</small>}{recaptchaError && <small className="rg-error">{recaptchaError}</small>}</> : <small className="rg-error">reCAPTCHA is not configured. Set VITE_RECAPTCHA_SITE_KEY to a site key registered for this application’s deployed domain, then rebuild.</small>}</div>
+    </div><div className="rg-actions"><button type="button" onClick={()=>{update("recaptcha_response", "");setStep(1);}}>Back</button><button disabled={loading || passwordMismatch}>{loading?"Creating…":"Complete registration"}</button></div></form>}
     {step===3 && <div className="rg-complete"><strong>✓</strong><h2>Registration submitted</h2><p>Your account is ready for the official login and OTP verification flow.</p><button onClick={()=>navigate("/auth/login")}>Continue to login</button></div>}
     {message&&<div className="rg-message">{message}</div>}<footer>Already registered? <Link to="/auth/login">Sign in</Link></footer></section></main>;
 }

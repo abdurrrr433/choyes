@@ -28,6 +28,7 @@ import AccessAgenciesPage from "@/pages/access/AccessAgenciesPage";
 import AccessSessionCentersPage from "@/pages/access/AccessSessionCentersPage";
 import AccessTestCentersPage from "@/pages/access/AccessTestCentersPage";
 import AccessSectionRulesPage from "@/pages/access/AccessSectionRulesPage";
+import ResultVerificationPage from "@/pages/access/ResultVerificationPage";
 import TestCenterDetailPage from "@/pages/exam/TestCenterDetailPage";
 import NotFound from "@/pages/NotFound";
 
@@ -69,6 +70,7 @@ const App = () => (
               <Route path="/access/session-centers" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessSessionCentersPage /></AccessProtectedRoute>} />
               <Route path="/access/test-centers" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessTestCentersPage /></AccessProtectedRoute>} />
               <Route path="/access/section-rules" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><AccessSectionRulesPage /></AccessProtectedRoute>} />
+              <Route path="/access/result-verification" element={<AccessProtectedRoute allowedRoles={["ADMIN"]}><ResultVerificationPage /></AccessProtectedRoute>} />
 
               <Route path="*" element={<NotFound />} />
             </Routes>

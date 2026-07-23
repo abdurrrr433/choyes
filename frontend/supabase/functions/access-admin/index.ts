@@ -27,6 +27,49 @@ const SVP_ORIGIN = "https://svp-international.pacc.sa";
 const SVP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
 const DASHBOARD_SYNC_LIMIT = 50;
 
+function verificationInput(body: any) {
+  const passportNumber = String(body?.passportNumber || "").trim().toUpperCase().replace(/\s+/g, "");
+  const occupationKey = String(body?.occupationKey || "").trim();
+  const nationalityId = String(body?.nationalityId || "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{5,20}$/.test(passportNumber)) {
+    throw { statusCode: 400, message: "Enter a valid passport number" };
+  }
+  if (!/^\d{1,12}$/.test(occupationKey)) {
+    throw { statusCode: 400, message: "Enter a valid occupation key" };
+  }
+  if (!/^[A-Z]{3}$/.test(nationalityId)) {
+    throw { statusCode: 400, message: "Nationality must be a 3-letter country code" };
+  }
+  return { passportNumber, occupationKey, nationalityId };
+}
+
+async function verifyLaborResult(input: { passportNumber: string; occupationKey: string; nationalityId: string }) {
+  const params = new URLSearchParams({
+    passport_number: input.passportNumber,
+    occupation_key: input.occupationKey,
+    nationality_id: input.nationalityId,
+    locale: "en",
+  });
+  const response = await fetch(`${SVP_BASE}/api/v1/visitor_space/labors?${params.toString()}`, {
+    headers: {
+      Accept: "application/json, text/plain, */*",
+      Origin: SVP_ORIGIN,
+      Referer: `${SVP_ORIGIN}/`,
+      "User-Agent": SVP_UA,
+      "X-Tenant-Name": "svp-international",
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await response.text();
+  let data: unknown;
+  try { data = text ? JSON.parse(text) : null; }
+  catch { data = { raw: "The verification provider returned an unreadable response." }; }
+  if (!response.ok) {
+    throw { statusCode: response.status === 429 ? 429 : 502, message: "Verification provider could not complete the request", details: data };
+  }
+  return data;
+}
+
 async function getJwtKey() {
   const encoder = new TextEncoder();
   return await crypto.subtle.importKey(
@@ -199,6 +242,25 @@ serve(async (req) => {
   }
 
   try {
+    // POST /result-verification — an audited, server-side lookup. Passport
+    // data is never placed in a URL handled by the browser or audit log.
+    if (path === "/result-verification" && req.method === "POST") {
+      const input = verificationInput(await req.json());
+      const result = await verifyLaborResult(input);
+      await supabase.from("access_audit_log").insert({
+        actor_account_id: auth.sub,
+        action: "result_verification.requested",
+        details: {
+          passport_last4: input.passportNumber.slice(-4),
+          occupation_key: input.occupationKey,
+          nationality_id: input.nationalityId,
+        },
+      });
+      return new Response(JSON.stringify({ result }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+
     // GET /dashboard — account ownership plus live SVP reservation/payment analytics.
     if (path === "/dashboard" && req.method === "GET") {
       const [accountsResult, svpUsersResult, sessionsResult] = await Promise.all([

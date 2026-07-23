@@ -11,7 +11,8 @@ export default defineConfig(({ mode }) => {
   return {
     server: {
       host: "::",
-      port: 8080,
+      // Keep the dev origin aligned with the API's local CORS allowlist.
+      port: 3000,
       allowedHosts: true,
       https: useHttps,
       hmr: {
