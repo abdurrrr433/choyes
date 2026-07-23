@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiAuthGet } from "@/lib/api";
+import { apiAuth } from "@/lib/api";
 import "@/styles/auth-premium.css";
 import "@/styles/result-verification.css";
 
@@ -13,7 +13,22 @@ interface LaborRow {
   occupation_key?: string;
   occupation_name?: string;
   status?: string;
-  [key: string]: any;
+  [key: string]: unknown;
+}
+
+function extractLaborRows(payload: unknown): LaborRow[] {
+  if (Array.isArray(payload)) return payload as LaborRow[];
+  if (!payload || typeof payload !== "object") return [];
+
+  const value = payload as Record<string, unknown>;
+  const nested = value.result ?? value.data ?? value.labors ?? value.items;
+  if (Array.isArray(nested)) return nested as LaborRow[];
+  if (nested && typeof nested === "object") {
+    const nestedValue = nested as Record<string, unknown>;
+    const nestedList = nestedValue.data ?? nestedValue.labors ?? nestedValue.items;
+    if (Array.isArray(nestedList)) return nestedList as LaborRow[];
+  }
+  return [];
 }
 
 export default function ResultVerificationPage() {
@@ -43,26 +58,26 @@ export default function ResultVerificationPage() {
     setSearched(false);
     setLoading(true);
     try {
-      const qs = new URLSearchParams({
-        passport_number: passportNumber.trim(),
-        occupation_key: occupationKey.trim(),
-        nationality_id: nationalityId.trim(),
-        locale: "en",
+      const data = await apiAuth<unknown>("/result-verification", {
+        passportNumber,
+        occupationKey,
+        nationalityId,
       });
-      const data = await apiAuthGet<any>(`/registration/labors?${qs.toString()}`);
-      const list = Array.isArray(data) ? data : (data?.data ?? data?.labors ?? data?.items ?? []);
+      const list = extractLaborRows(data);
       setResults(list);
       setSearched(true);
       if (list.length === 0) setError("No labor records found for the given criteria.");
-    } catch (err: any) {
-      setError(err?.message || err?.data?.message || "Search failed");
+    } catch (err: unknown) {
+      const value = err as { message?: string; data?: { message?: unknown } };
+      const detail = value.data?.message || value.message || "Search failed";
+      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
       setSearched(true);
     } finally {
       setLoading(false);
     }
   }
 
-  function renderCell(key: string, value: any, row: LaborRow, idx: number) {
+  function renderCell(key: string, value: unknown) {
     if (value === null || value === undefined || value === "") return <span key={key} className="rv-cell rv-cell--empty">—</span>;
     // Highlight passport number
     if (key === "passport_number") return <code key={key} className="rv-cell rv-cell--highlight">{String(value)}</code>;
@@ -140,7 +155,7 @@ export default function ResultVerificationPage() {
                 <tbody>
                   {results.map((row, i) => (
                     <tr key={i}>
-                      {Object.entries(row).map(([key, value]) => renderCell(key, value, row, i))}
+                      {Object.entries(row).map(([key, value]) => renderCell(key, value))}
                     </tr>
                   ))}
                 </tbody>
