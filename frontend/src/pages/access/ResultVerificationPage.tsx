@@ -21,15 +21,28 @@ interface OccupationOption {
   name: string;
 }
 
+// SVP's /visitor_space/labors endpoint returns different shapes depending on
+// match count: an array when there are (or could be) multiple rows, but a
+// single flat object — e.g. { applicant_name, exam_result, exam_date, ... }
+// with no wrapping array at all — when there's exactly one match. Detect
+// that flat-record shape and normalize it into a one-item array.
+const RECORD_FIELD_HINTS = ["applicant_name", "exam_result", "exam_date", "test_center_name", "passport_number", "full_name"];
+function looksLikeSingleRecord(obj: Record<string, unknown>): boolean {
+  return RECORD_FIELD_HINTS.some((key) => key in obj);
+}
+
 function extractLaborRows(payload: unknown): LaborRow[] {
   if (Array.isArray(payload)) return payload as LaborRow[];
   if (!payload || typeof payload !== "object") return [];
 
   const value = payload as Record<string, unknown>;
+  if (looksLikeSingleRecord(value)) return [value as LaborRow];
+
   const nested = value.result ?? value.data ?? value.labors ?? value.items;
   if (Array.isArray(nested)) return nested as LaborRow[];
   if (nested && typeof nested === "object") {
     const nestedValue = nested as Record<string, unknown>;
+    if (looksLikeSingleRecord(nestedValue)) return [nestedValue as LaborRow];
     const nestedList = nestedValue.data ?? nestedValue.labors ?? nestedValue.items;
     if (Array.isArray(nestedList)) return nestedList as LaborRow[];
   }
