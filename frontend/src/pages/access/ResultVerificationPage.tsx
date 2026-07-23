@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { apiAuth } from "@/lib/api";
+import { useState, useEffect, useRef } from "react";
+import { apiAuth, apiAuthGet } from "@/lib/api";
 import "@/styles/auth-premium.css";
 import "@/styles/result-verification.css";
 
@@ -14,6 +14,11 @@ interface LaborRow {
   occupation_name?: string;
   status?: string;
   [key: string]: unknown;
+}
+
+interface OccupationOption {
+  id: string;
+  name: string;
 }
 
 function extractLaborRows(payload: unknown): LaborRow[] {
@@ -31,9 +36,35 @@ function extractLaborRows(payload: unknown): LaborRow[] {
   return [];
 }
 
+function extractOccupationRows(payload: unknown): OccupationOption[] {
+  const pick = (val: unknown): unknown[] => {
+    if (Array.isArray(val)) return val;
+    if (val && typeof val === "object") {
+      const v = val as Record<string, unknown>;
+      for (const key of ["data", "occupations", "items"]) {
+        if (Array.isArray(v[key])) return v[key] as unknown[];
+      }
+    }
+    return [];
+  };
+  const raw = pick(payload).length ? pick(payload) : pick((payload as Record<string, unknown>)?.data);
+  return raw.map((item) => {
+    const o = item as Record<string, unknown>;
+    const id = o.id ?? o.key ?? o.occupation_id ?? o.occupation_key;
+    const name = o.name ?? o.english_name ?? o.title ?? o.occupation_name ?? "";
+    return { id: String(id ?? ""), name: String(name || `Occupation ${id ?? ""}`) };
+  }).filter((o) => o.id);
+}
+
 export default function ResultVerificationPage() {
   const [passportNumber, setPassportNumber] = useState("");
   const [occupationKey, setOccupationKey] = useState("");
+  const [occupationQuery, setOccupationQuery] = useState("");
+  const [occupationOptions, setOccupationOptions] = useState<OccupationOption[]>([]);
+  const [occupationOpen, setOccupationOpen] = useState(false);
+  const [occupationLoading, setOccupationLoading] = useState(false);
+  const [occupationError, setOccupationError] = useState("");
+  const occupationBoxRef = useRef<HTMLDivElement>(null);
   const [nationalityId, setNationalityId] = useState("BGD");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<LaborRow[]>([]);
@@ -46,16 +77,59 @@ export default function ResultVerificationPage() {
       const saved = sessionStorage.getItem("selected_occupation");
       if (saved) {
         const occ = JSON.parse(saved);
-        setOccupationKey(occ.occupation_key || "");
+        if (occ.occupation_key) {
+          setOccupationKey(String(occ.occupation_key));
+          setOccupationQuery(occ.occupation_name || String(occ.occupation_key));
+        }
       }
     } catch { /* ignore */ }
   }, []);
+
+  // Debounced occupation search-as-you-type against the live SVP occupations list.
+  useEffect(() => {
+    const query = occupationQuery.trim();
+    if (query.length < 2) { setOccupationOptions([]); return; }
+    setOccupationLoading(true);
+    setOccupationError("");
+    const handle = setTimeout(() => {
+      apiAuthGet<unknown>(`/registration/occupations?per_page=20&name=${encodeURIComponent(query)}`)
+        .then((data) => setOccupationOptions(extractOccupationRows(data)))
+        .catch((err: unknown) => {
+          const value = err as { message?: string };
+          setOccupationOptions([]);
+          setOccupationError(value?.message || "Could not load occupations");
+        })
+        .finally(() => setOccupationLoading(false));
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [occupationQuery]);
+
+  // Close the dropdown when clicking outside the occupation field.
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (occupationBoxRef.current && !occupationBoxRef.current.contains(e.target as Node)) {
+        setOccupationOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  function selectOccupation(opt: OccupationOption) {
+    setOccupationKey(opt.id);
+    setOccupationQuery(opt.name);
+    setOccupationOpen(false);
+  }
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setResults([]);
     setSearched(false);
+    if (!occupationKey) {
+      setError("Please select an occupation from the search results.");
+      return;
+    }
     setLoading(true);
     try {
       const data = await apiAuth<unknown>("/result-verification", {
@@ -107,18 +181,41 @@ export default function ResultVerificationPage() {
                 autoComplete="off"
               />
             </div>
-            <div className="rv-field">
-              <label htmlFor="rv-occ">Occupation Key</label>
+            <div className="rv-field" ref={occupationBoxRef} style={{ position: "relative" }}>
+              <label htmlFor="rv-occ">Occupation</label>
               <input
                 id="rv-occ"
                 type="text"
-                value={occupationKey}
-                onChange={(e) => setOccupationKey(e.target.value)}
-                placeholder="e.g. 933301"
-                required
+                value={occupationQuery}
+                onChange={(e) => {
+                  setOccupationQuery(e.target.value);
+                  setOccupationKey("");
+                  setOccupationOpen(true);
+                }}
+                onFocus={() => { if (occupationOptions.length > 0) setOccupationOpen(true); }}
+                placeholder="Type to search, e.g. Welder"
                 autoComplete="off"
+                required
               />
-              {occupationKey && <small>Pre-filled from your login page selection.</small>}
+              {occupationOpen && occupationQuery.trim().length >= 2 && (
+                <div className="rv-occ-dropdown">
+                  {occupationLoading && <div className="rv-occ-dropdown-item rv-occ-dropdown-item--muted">Searching…</div>}
+                  {!occupationLoading && occupationError && <div className="rv-occ-dropdown-item rv-occ-dropdown-item--muted">{occupationError}</div>}
+                  {!occupationLoading && !occupationError && occupationOptions.length === 0 && (
+                    <div className="rv-occ-dropdown-item rv-occ-dropdown-item--muted">No occupations found.</div>
+                  )}
+                  {!occupationLoading && occupationOptions.map((opt) => (
+                    <button type="button" key={opt.id} className="rv-occ-dropdown-item" onClick={() => selectOccupation(opt)}>
+                      {opt.name} <span className="rv-occ-dropdown-item-id">#{opt.id}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {occupationKey ? (
+                <small>Selected occupation key: {occupationKey}</small>
+              ) : (
+                <small>Search and select an occupation from the list.</small>
+              )}
             </div>
             <div className="rv-field">
               <label htmlFor="rv-nat">Nationality ID</label>
